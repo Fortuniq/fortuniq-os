@@ -1,8 +1,8 @@
-# FortunIQ OS — v2 Build
+# FortunIQ OS — v3 Build
 
-Internal operating system for FortunIQ Fuels. Built with the stack you specified: **React, Next.js (App Router), TypeScript, Tailwind CSS, Supabase.**
+Internal operating system for FortunIQ Fuels. Built with **React, Next.js (App Router), TypeScript, Tailwind CSS, Supabase, and Microsoft Login (Entra ID / Auth.js v5).**
 
-This build covers **5 of the planned 12 modules**, and every one of them now runs on a **real database** (Supabase/PostgreSQL), not mock data. The remaining 7 modules (Finance, Operations, Customers, Sales, Reports, AI Assistant, Settings) follow the same patterns established here.
+This build covers **5 of the planned 12 modules**, each database-connected, and now sits behind **real Microsoft 365 authentication** — nobody can see any page without signing in with a genuine FortunIQ Fuels Microsoft account.
 
 ## What's in this build
 
@@ -13,23 +13,19 @@ This build covers **5 of the planned 12 modules**, and every one of them now run
 | Academy | ✅ Built, database-connected |
 | Documents | ✅ Built, database-connected |
 | Tenders | ✅ Built, database-connected |
-| Finance | Not built |
-| Operations | Not built |
-| Customers | Not built |
-| Sales | Not built |
-| Reports | Not built |
-| AI Assistant | Not built |
-| Settings | Not built |
+| Finance / Operations / Customers / Sales / Reports / AI Assistant / Settings | Not built |
 
-## Connecting the database (do this first)
+## Setup, in order
 
-**See `supabase/SETUP.md` for the full 10-minute walkthrough.** Short version:
+1. **Database** — see `supabase/SETUP.md` (create tables, add starter data)
+2. **Microsoft Login** — see `docs/MICROSOFT_LOGIN_SETUP.md` (register the app, get your credentials)
+3. Copy `.env.local.example` to `.env.local` and fill in both sets of values
+4. `npm install && npm run dev`
 
-1. Create a free project at supabase.com
-2. Run `supabase/schema.sql` then `supabase/seed.sql` in Supabase's SQL Editor
-3. Copy `.env.local.example` to `.env.local` and fill in your project's URL and key
-
-**Until you do this, the app keeps working using realistic mock data** — every page tries Supabase first, and gracefully falls back to the same placeholder data you've already seen if no database is connected yet. Nothing breaks either way.
+**Until both are set up**, the app still runs — data falls back to realistic
+placeholders, and if no Microsoft credentials are present, the sign-in
+button will show an error when clicked (expected, until Part 1 of the
+Microsoft Login guide is complete).
 
 ## Running it locally
 
@@ -45,30 +41,38 @@ Then open **http://localhost:3000**.
 ## What's real vs. what's still a placeholder
 
 - **All UI, layout, navigation, and styling is real, working code.**
-- **Data is now real**, once you've completed the Supabase setup above — editable directly in Supabase's Table Editor, with proper security rules (Row Level Security) already configured.
-- **"Signed in via Microsoft"** in the top bar is still a visual placeholder — that's the next piece to wire up (needs your Microsoft 365 admin to register the app in Entra ID).
+- **Data is real**, once Supabase is connected — editable directly in Supabase's Table Editor, with Row Level Security already configured.
+- **Sign-in is real Microsoft 365 authentication**, once the Entra ID app registration is complete — restricted to your own organisation's accounts only, nobody else can sign in.
 - **The floating AI button** links to `/ai`, which doesn't exist yet.
 
 ## Project structure
 
 ```
 src/
-  app/                  → one folder per module; each has page.tsx (fetches data) + a -view.tsx (renders it)
+  app/
+    (app)/               → every page that requires sign-in (dashboard, people, academy, ...)
+    auth/signin/          → the standalone Microsoft sign-in page (no sidebar/topbar)
+    api/auth/              → Auth.js's login/logout/callback handling
+    actions.ts             → sign-out server action
   components/
-    layout/             → Sidebar, TopBar, AppShell
-    ui/                 → Card, Badge, StatCard, DataTable, PageHeader
+    layout/               → Sidebar, TopBar, AppShell
+    ui/                   → Card, Badge, StatCard, DataTable, PageHeader
   lib/
-    nav.ts              → the 12-module sidebar configuration
-    data.ts             → the data access layer — tries Supabase, falls back to mock data
-    mock-data.ts        → placeholder data, used automatically until Supabase is connected
-    format.ts           → currency/date formatting helpers
-    supabase/           → Supabase client setup (browser + server)
-  fonts/                → Montserrat & Inter, self-hosted (brand fonts)
-public/brand/           → your approved logo files
+    nav.ts                → the 12-module sidebar configuration
+    data.ts               → the data access layer — tries Supabase, falls back to mock data
+    mock-data.ts          → placeholder data, used automatically until Supabase is connected
+    format.ts             → currency/date formatting helpers
+    supabase/              → Supabase client setup (browser + server)
+  auth.ts                 → Microsoft Login configuration
+  proxy.ts                 → route protection — redirects signed-out visitors to /auth/signin
+  fonts/                  → Montserrat & Inter, self-hosted (brand fonts)
+public/brand/             → your approved logo files
 supabase/
-  schema.sql            → run this first, in Supabase's SQL Editor
-  seed.sql              → run this second, to populate starter data
-  SETUP.md              → full step-by-step guide
+  schema.sql               → run this first, in Supabase's SQL Editor
+  seed.sql                 → run this second, to populate starter data
+  SETUP.md                  → full step-by-step guide
+docs/
+  MICROSOFT_LOGIN_SETUP.md  → full step-by-step guide for real Microsoft sign-in
 ```
 
 ## Brand system

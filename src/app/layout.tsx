@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
 const montserrat = localFont({
@@ -29,9 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${montserrat.variable} ${inter.variable} h-full`}>
-      <body className="min-h-full antialiased">
-        <AppShell>{children}</AppShell>
-      </body>
+      <body className="min-h-full antialiased">{children}</body>
     </html>
   );
 }

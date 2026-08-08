@@ -5,12 +5,18 @@ import { Sparkles } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+type SessionUser = {
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+} | undefined;
+
+export function AppShell({ children, user }: { children: React.ReactNode; user?: SessionUser }) {
   return (
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
       <div className="flex-1 min-w-0">
-        <TopBar />
+        <TopBar user={user} />
         <main className="p-6 max-w-[1400px] mx-auto">{children}</main>
       </div>
 
