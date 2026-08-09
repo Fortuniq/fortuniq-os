@@ -137,3 +137,118 @@ create policy "Authenticated write notifications" on notifications for all using
 
 create policy "Authenticated read fuel_prices" on fuel_prices for select using (auth.role() = 'authenticated');
 create policy "Authenticated write fuel_prices" on fuel_prices for all using (auth.role() = 'authenticated');
+
+-- ---------- FINANCE ----------
+create table invoices (
+  id uuid primary key default gen_random_uuid(),
+  invoice_number text not null unique,
+  customer text not null,
+  amount numeric(14, 2) not null default 0,
+  status text not null check (status in ('Draft', 'Sent', 'Paid', 'Overdue')),
+  due_date date not null,
+  created_at timestamptz default now()
+);
+
+create table expenses (
+  id uuid primary key default gen_random_uuid(),
+  category text not null,
+  amount numeric(14, 2) not null default 0,
+  expense_date date not null,
+  created_at timestamptz default now()
+);
+
+create table suppliers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  category text,
+  terms text,
+  status text not null default 'Active',
+  created_at timestamptz default now()
+);
+
+-- ---------- OPERATIONS ----------
+create table fuel_orders (
+  id uuid primary key default gen_random_uuid(),
+  order_number text not null unique,
+  customer text not null,
+  product text not null,
+  volume int not null default 0,
+  status text not null check (status in ('Scheduled', 'Loading', 'In Transit', 'Delivered')),
+  eta text,
+  created_at timestamptz default now()
+);
+
+create table fleet (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_code text not null unique,
+  vehicle text not null,
+  capacity text,
+  driver text,
+  status text not null check (status in ('Available', 'Loading', 'On Route', 'Maintenance')),
+  created_at timestamptz default now()
+);
+
+-- ---------- CUSTOMERS ----------
+create table customers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  industry text,
+  account_value numeric(14, 2) not null default 0,
+  status text not null default 'Active',
+  contact text,
+  created_at timestamptz default now()
+);
+
+-- ---------- SALES ----------
+create table quotes (
+  id uuid primary key default gen_random_uuid(),
+  quote_number text not null unique,
+  customer text not null,
+  value numeric(14, 2) not null default 0,
+  stage text not null check (stage in ('Draft', 'Sent', 'Negotiation', 'Won', 'Lost')),
+  owner text,
+  created_at timestamptz default now()
+);
+
+create table pipeline_stages (
+  id uuid primary key default gen_random_uuid(),
+  stage text not null,
+  stage_order int not null default 0,
+  deal_count int not null default 0,
+  total_value numeric(14, 2) not null default 0,
+  created_at timestamptz default now()
+);
+
+-- ---------- SECURITY ----------
+alter table invoices enable row level security;
+alter table expenses enable row level security;
+alter table suppliers enable row level security;
+alter table fuel_orders enable row level security;
+alter table fleet enable row level security;
+alter table customers enable row level security;
+alter table quotes enable row level security;
+alter table pipeline_stages enable row level security;
+
+create policy "Authenticated read invoices" on invoices for select using (auth.role() = 'authenticated');
+create policy "Authenticated write invoices" on invoices for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read expenses" on expenses for select using (auth.role() = 'authenticated');
+create policy "Authenticated write expenses" on expenses for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read suppliers" on suppliers for select using (auth.role() = 'authenticated');
+create policy "Authenticated write suppliers" on suppliers for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read fuel_orders" on fuel_orders for select using (auth.role() = 'authenticated');
+create policy "Authenticated write fuel_orders" on fuel_orders for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read fleet" on fleet for select using (auth.role() = 'authenticated');
+create policy "Authenticated write fleet" on fleet for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read customers" on customers for select using (auth.role() = 'authenticated');
+create policy "Authenticated write customers" on customers for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read quotes" on quotes for select using (auth.role() = 'authenticated');
+create policy "Authenticated write quotes" on quotes for all using (auth.role() = 'authenticated');
+
+create policy "Authenticated read pipeline_stages" on pipeline_stages for select using (auth.role() = 'authenticated');
+create policy "Authenticated write pipeline_stages" on pipeline_stages for all using (auth.role() = 'authenticated');

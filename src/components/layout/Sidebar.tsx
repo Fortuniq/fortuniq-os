@@ -5,9 +5,14 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { NAV_ITEMS } from "@/lib/nav";
+import { hasModuleAccess, type UserPermissions } from "@/lib/permissions";
 
-export function Sidebar() {
+export function Sidebar({ permissions }: { permissions?: UserPermissions }) {
   const pathname = usePathname();
+
+  const visibleItems = permissions
+    ? NAV_ITEMS.filter((item) => hasModuleAccess(permissions, item.key))
+    : NAV_ITEMS;
 
   return (
     <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-border bg-white">
@@ -22,7 +27,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;
           return (
@@ -48,6 +53,14 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {permissions?.isAdmin && (
+        <div className="px-3 pb-2">
+          <span className="text-[10px] font-semibold text-orange bg-orange/10 px-2 py-1 rounded-full">
+            ADMIN
+          </span>
+        </div>
+      )}
 
       <div className="p-3 border-t border-border">
         <div className="rounded-lg bg-surface p-3">

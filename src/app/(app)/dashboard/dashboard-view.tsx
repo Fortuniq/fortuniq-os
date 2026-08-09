@@ -27,13 +27,21 @@ type DashboardData = {
     openTenders: { value: number; label: string; closingSoon: number };
     employees: { value: number; label: string; onLeave: number };
   };
+  firstName: string;
 };
 
-export function DashboardView({ fuelPrices, tasks, notifications, salesTrend, stats }: DashboardData) {
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+export function DashboardView({ fuelPrices, tasks, notifications, salesTrend, stats, firstName }: DashboardData) {
   return (
     <div>
       <PageHeader
-        title="Good morning, Thabo"
+        title={`${greeting()}, ${firstName}`}
         description="Here's what's happening across FortunIQ Fuels today."
       />
 
