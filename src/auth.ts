@@ -44,18 +44,43 @@ async function refreshAccessToken(token: JWTWithGraphToken): Promise<JWTWithGrap
         scope: SCOPES,
       }),
     });
-    const refreshed = await response.json();
-    if (!response.ok) throw refreshed;
+
+    // Read as text first — Microsoft's token endpoint can occasionally
+    // return an empty or non-JSON body on certain error conditions, and
+    // calling .json() directly on that throws an unhelpful "Unexpected
+    // end of JSON input" that hides the real problem. This way we always
+    // get a clear log of what actually came back.
+    const rawBody = await response.text();
+    let refreshed: Record<string, unknown>;
+    try {
+      refreshed = rawBody ? JSON.parse(rawBody) : {};
+    } catch {
+      console.error("Microsoft Graph token refresh: non-JSON response, status", response.status, "body:", rawBody.slice(0, 300));
+      // Back off for 5 minutes rather than retrying on every single
+      // request — the person stays signed in with their existing
+      // session; only SharePoint-dependent features (Documents preview,
+      // search, and the AI reading SharePoint content) are affected
+      // until the next successful refresh.
+      return { ...token, accessTokenExpires: Date.now() + 5 * 60 * 1000, error: "RefreshAccessTokenError" as const };
+    }
+
+    if (!response.ok) {
+      console.error("Microsoft Graph token refresh failed:", response.status, refreshed);
+      return { ...token, accessTokenExpires: Date.now() + 5 * 60 * 1000, error: "RefreshAccessTokenError" as const };
+    }
 
     return {
       ...token,
-      accessToken: refreshed.access_token,
-      accessTokenExpires: Date.now() + refreshed.expires_in * 1000,
-      refreshToken: refreshed.refresh_token ?? token.refreshToken,
+      accessToken: refreshed.access_token as string,
+      accessTokenExpires: Date.now() + (refreshed.expires_in as number) * 1000,
+      refreshToken: (refreshed.refresh_token as string) ?? token.refreshToken,
+      error: undefined,
     };
   } catch (error) {
-    console.error("Failed to refresh Microsoft Graph access token:", error);
-    return { ...token, error: "RefreshAccessTokenError" as const };
+    console.error("Failed to refresh Microsoft Graph access token:", error instanceof Error ? error.message : error);
+    // Same backoff as above — avoid hammering Microsoft's endpoint (and
+    // filling the logs) on every request when something's genuinely wrong.
+    return { ...token, accessTokenExpires: Date.now() + 5 * 60 * 1000, error: "RefreshAccessTokenError" as const };
   }
 }
 

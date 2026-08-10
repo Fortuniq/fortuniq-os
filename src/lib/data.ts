@@ -124,7 +124,14 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
   try {
     const supabase = createServiceClient();
     const { data: e, error } = await supabase.from("employees").select("*").eq("id", id).maybeSingle();
-    if (error || !e) return null;
+    if (error) {
+      console.error("getEmployeeProfile: error fetching employee row:", error.message, error.details, error.hint);
+      return null;
+    }
+    if (!e) {
+      console.error("getEmployeeProfile: no employee found for id", id);
+      return null;
+    }
 
     let managerName: string | null = null;
     if (e.manager_id) {
@@ -132,10 +139,18 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
       managerName = mgr?.name ?? null;
     }
 
-    const [{ data: equipment }, { data: certifications }] = await Promise.all([
+    // Equipment and certifications are supplementary — if either query
+    // fails (e.g. a table genuinely missing), the whole profile should
+    // still load rather than disappearing entirely. Logged either way so
+    // a real problem is still visible in Netlify's function logs.
+    const [equipmentResult, certificationsResult] = await Promise.all([
       supabase.from("employee_equipment").select("*").eq("employee_id", id).order("issued_date", { ascending: false }),
       supabase.from("employee_certifications").select("*").eq("employee_id", id).order("issued_date", { ascending: false }),
     ]);
+    if (equipmentResult.error) console.error("getEmployeeProfile: employee_equipment query error:", equipmentResult.error.message);
+    if (certificationsResult.error) console.error("getEmployeeProfile: employee_certifications query error:", certificationsResult.error.message);
+    const equipment = equipmentResult.data ?? [];
+    const certifications = certificationsResult.data ?? [];
 
     return {
       id: e.id,
@@ -169,7 +184,8 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
         id: c.id, name: c.name, issuedDate: c.issued_date, expiryDate: c.expiry_date,
       })),
     };
-  } catch {
+  } catch (err) {
+    console.error("getEmployeeProfile: unexpected error:", err instanceof Error ? err.message : err);
     return null;
   }
 }
