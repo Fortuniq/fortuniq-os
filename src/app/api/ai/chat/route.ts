@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getCurrentUserPermissions, hasModuleAccess } from "@/lib/permissions";
+import { auth } from "@/auth";
+import { getDocuments } from "@/lib/data";
+import { getDocumentTextContent, isSharePointConfigured } from "@/lib/graph";
 import { NextResponse } from "next/server";
 
 const SYSTEM_PROMPT = `You are the FortunIQ AI Assistant, built into FortunIQ OS — the internal
@@ -8,6 +11,41 @@ logistics company. Help employees with tasks like drafting quotations, summarisi
 writing emails, preparing onboarding materials, meeting minutes, supplier reviews, SOPs, and
 training content. Be concise, professional, and specific to the fuel/logistics/tender context
 where relevant. If asked to produce a document, format it clearly with headings.`;
+
+// Builds context about the company's Approved documents for the AI to draw
+// on. Only ever includes documents marked "Approved" — Draft and Archived
+// documents are never shown to the AI. Uses the CURRENT SIGNED-IN USER'S
+// own SharePoint access to fetch content, so — same as everywhere else in
+// the Documents module — the AI can only ever read what that specific
+// person could themselves open in SharePoint.
+async function buildApprovedDocumentsContext(accessToken?: string): Promise<string> {
+  const documents = await getDocuments();
+  const approved = documents.filter((d) => d.status === "Approved");
+  if (approved.length === 0) return "";
+
+  const listing = approved.map((d) => `- ${d.name} (${d.category}, version ${d.version})`).join("\n");
+  let context = `\n\nThe following company documents are Approved and available for reference:\n${listing}`;
+
+  // Best-effort: pull actual text content for a small number of approved,
+  // SharePoint-linked, text-extractable documents, so the AI can quote or
+  // summarise them directly rather than just knowing they exist.
+  if (isSharePointConfigured && accessToken) {
+    const withFiles = approved.filter((d) => d.sharepointItemId).slice(0, 3);
+    for (const doc of withFiles) {
+      try {
+        const text = await getDocumentTextContent(accessToken, doc.sharepointItemId as string);
+        if (text) {
+          context += `\n\n--- Content of "${doc.name}" ---\n${text.slice(0, 6000)}`;
+        }
+      } catch {
+        // Skip silently — e.g. the file is a binary format (Word/PDF) not
+        // yet supported for text extraction, or the user lost access.
+      }
+    }
+  }
+
+  return context;
+}
 
 export async function POST(req: Request) {
   const permissions = await getCurrentUserPermissions();
@@ -32,11 +70,14 @@ export async function POST(req: Request) {
   }
 
   try {
+    const session = await auth();
+    const documentContext = await buildApprovedDocumentsContext(session?.accessToken as string | undefined);
+
     const anthropic = new Anthropic({ apiKey });
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + documentContext,
       messages: [{ role: "user", content: message }],
     });
 

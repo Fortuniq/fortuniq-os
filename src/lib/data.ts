@@ -51,14 +51,24 @@ export async function getLearningPaths() {
 }
 
 export async function getDocuments() {
-  if (!supabaseConfigured) return mock.documents;
+  if (!supabaseConfigured) return mock.documents.map((d) => ({ ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null }));
   try {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("documents").select("*").order("updated_at", { ascending: false });
-    if (error || !data || data.length === 0) return mock.documents;
-    return data.map((d, i) => ({ id: i + 1, name: d.name, category: d.category, version: d.version, updated: d.updated_at, owner: d.owner }));
+    if (error || !data || data.length === 0) return mock.documents.map((d) => ({ ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null }));
+    return data.map((d) => ({
+      id: d.id,
+      name: d.name,
+      category: d.category,
+      version: d.version,
+      updated: d.updated_at,
+      owner: d.owner,
+      status: d.status ?? "Draft",
+      sharepointItemId: d.sharepoint_item_id,
+      sharepointWebUrl: d.sharepoint_web_url,
+    }));
   } catch {
-    return mock.documents;
+    return mock.documents.map((d) => ({ ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null }));
   }
 }
 

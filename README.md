@@ -1,26 +1,27 @@
-# FortunIQ OS — v5 Build — All 12 Modules + Admin & Permissions
+# FortunIQ OS — v6 Build — SharePoint Document Management
 
-The complete internal operating system for FortunIQ Fuels, now with a real
-**Admin & Permissions system** — an administrator controls exactly which
-modules each person can see (e.g. Marketing doesn't see Finance), and only
-Admins can grant admin rights to others.
+The complete internal operating system for FortunIQ Fuels — now with
+**SharePoint as its real document management system.** Actual files live
+in SharePoint; FortunIQ OS stores only metadata and a link, and every
+document request uses each signed-in person's own Microsoft identity —
+if someone can't open a file in SharePoint, they can't see it here either.
 
 Built with **React, Next.js (App Router), TypeScript, Tailwind CSS,
-Supabase, Microsoft Login (Entra ID), and Claude for the AI Assistant.**
+Supabase, Microsoft Login (Entra ID), Microsoft Graph API, and Claude for
+the AI Assistant.**
 
 ## What's new in this build
 
-- **The Dashboard greeting now shows whoever's actually signed in** (and
-  changes with time of day — "Good morning/afternoon/evening"), instead of
-  a hardcoded name.
-- **A real permissions system**: Settings → Team Management (visible only
-  to Admins) lets you add people by email, tick exactly which of the 12
-  modules they can see, and promote others to Admin.
-- **The first person to sign in after setup automatically becomes the
-  first Admin** — see `docs/PERMISSIONS_SETUP.md`.
-- **A security fix**: earlier builds were querying Supabase in a way that
-  its own security rules would have silently blocked in some situations
-  (see "Important technical note" below) — this is now fixed properly.
+- **Documents is now genuinely SharePoint-backed**: browse your SharePoint
+  library from inside FortunIQ OS, catalogue files with one click, preview
+  them in-app, view SharePoint's own version history, and search across
+  the whole library — all using your own real Microsoft permissions.
+- **Draft / Approved / Archived status** on every document, set right from
+  the Documents table.
+- **The AI Assistant now knows about your Approved documents** — it can
+  reference them by name always, and read the actual content of
+  plain-text approved files directly (Word/PDF/Excel content-reading is a
+  documented next step, not yet built — see `docs/SHAREPOINT_SETUP.md`).
 
 ## Setup, in order
 
@@ -29,7 +30,9 @@ Supabase, Microsoft Login (Entra ID), and Claude for the AI Assistant.**
 2. **Microsoft Login** — `docs/MICROSOFT_LOGIN_SETUP.md`
 3. **Admin & Permissions** — `docs/PERMISSIONS_SETUP.md` (do this right
    after connecting the database — the first person to sign in becomes Admin)
-4. **AI Assistant** (optional) — `docs/AI_ASSISTANT_SETUP.md`
+4. **SharePoint** — `docs/SHAREPOINT_SETUP.md` (needed for Documents to
+   show real files, previews, and version history)
+5. **AI Assistant** (optional) — `docs/AI_ASSISTANT_SETUP.md`
 5. Copy `.env.local.example` to `.env.local` and fill in your values,
    **including the new `SUPABASE_SERVICE_ROLE_KEY`**
 6. `npm install && npm run dev`
