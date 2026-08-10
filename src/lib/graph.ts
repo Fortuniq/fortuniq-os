@@ -149,4 +149,27 @@ function mapDriveItem(item: Record<string, unknown>): SharePointFile {
   };
 }
 
+/**
+ * Real-time check: can THIS specific person (their own access token)
+ * actually open this specific SharePoint item right now? Used by the AI
+ * Assistant before including any document in its context — see
+ * docs/AI_SECURITY.md, requirement 7 (AI permission inheritance).
+ *
+ * Deliberately fails closed: any error (network issue, expired token,
+ * Graph API hiccup, the item no longer existing) returns false, not true.
+ * An AI feature should never assume access when it can't actually verify
+ * it — a false negative here just means the AI doesn't mention a document
+ * it maybe could have; a false positive would mean it discloses something
+ * it shouldn't.
+ */
+export async function canUserAccessItem(accessToken: string, itemId: string): Promise<boolean> {
+  try {
+    const { driveId } = await resolveSharePointSite(accessToken);
+    await graphFetch(`/drives/${driveId}/items/${itemId}?$select=id`, accessToken);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const isSharePointConfigured = !!process.env.SHAREPOINT_SITE_URL;

@@ -6,6 +6,15 @@ currently shows a friendly message explaining that instead of an answer.
 
 This takes about 5 minutes.
 
+## Before you start: run the AI security migration
+
+If you haven't already, run `supabase/migration_v7_ai_security.sql` in
+Supabase's SQL Editor first — this adds document classification levels
+(General/Internal/Confidential/Highly Confidential) and the AI-specific
+security log. **See `docs/AI_SECURITY.md` for the full architecture** —
+worth reading before enabling this for your whole team, since it covers
+exactly what the AI can and can't see, and how that's enforced.
+
 ## Step 1 — Create an Anthropic account and get an API key
 
 1. Go to **console.anthropic.com** and sign up (or log in)

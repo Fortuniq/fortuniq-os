@@ -62,3 +62,58 @@ export async function updateDocumentStatus(documentId: string, status: "Draft" |
 
   revalidatePath("/documents");
 }
+
+/**
+ * Sets a document's classification and, for Confidential and above, who
+ * is explicitly authorised to see it. Restricted to Super Admins —
+ * deliberately: deciding what counts as Confidential or Highly
+ * Confidential, and who's authorised to see it, is exactly the kind of
+ * decision that shouldn't be self-service for whoever happens to have
+ * Documents module access. See docs/AI_SECURITY.md.
+ */
+export async function updateDocumentClassification(
+  documentId: string,
+  classification: "General" | "Internal" | "Confidential" | "Highly Confidential",
+  authorizedRoles: string[],
+  authorizedEmails: string[],
+  aiExcluded: boolean
+) {
+  const permissions = await requireModuleAccess("documents");
+  if (!permissions.isAdmin) {
+    throw new Error("Only a Super Admin can change a document's classification.");
+  }
+
+  const supabase = createServiceClient();
+  const { data: before } = await supabase
+    .from("documents")
+    .select("name, classification, ai_excluded")
+    .eq("id", documentId)
+    .maybeSingle();
+
+  await supabase
+    .from("documents")
+    .update({
+      classification,
+      authorized_roles: authorizedRoles,
+      authorized_emails: authorizedEmails.map((e) => e.trim().toLowerCase()).filter(Boolean),
+      ai_excluded: aiExcluded,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", documentId);
+
+  await logAudit({
+    actorEmail: permissions.email!,
+    actorName: permissions.name,
+    action: "document_status_changed", // reuses the same audit action family as other document metadata changes
+    targetType: "document",
+    targetId: documentId,
+    targetLabel: before?.name ?? documentId,
+    metadata: {
+      field: "classification",
+      before: { classification: before?.classification ?? null, aiExcluded: before?.ai_excluded ?? false },
+      after: { classification, aiExcluded },
+    },
+  });
+
+  revalidatePath("/documents");
+}

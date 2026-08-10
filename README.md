@@ -1,16 +1,44 @@
-# FortunIQ OS — v7 Build — Roles, Audit Logs & Security Hardening
+# FortunIQ OS — v8 Build — AI Security & Information Classification
 
 The complete internal operating system for FortunIQ Fuels — now with a
-proper **role-based permission system** (Super Admin, Management,
-HR/Admin, Finance, Sales/Marketing, Employee), **real audit logging**,
-and a full **security hardening pass**, backed by **105 automated tests**
-verifying every role sees exactly what it should — nothing more.
+full **AI security architecture**: information classification (General
+through Highly Confidential), real-time permission inheritance so the AI
+can never see more than the person asking it, prompt-injection defences,
+and a dedicated AI security log — backed by **127 automated tests**.
 
 Built with **React, Next.js (App Router), TypeScript, Tailwind CSS,
 Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude for the
 AI Assistant, and Vitest for automated testing.**
 
 ## What's new in this build
+
+- **Document classification**: every document is General, Internal,
+  Confidential, or Highly Confidential. Confidential and above require
+  explicit authorisation — by role, by named individual, or both — set
+  by Super Admins from Documents → Manage Access. This applies to the
+  Documents module itself, not just the AI. See `docs/AI_SECURITY.md`.
+- **AI permission inheritance, enforced twice**: classification/role
+  filtering happens before anything reaches the model, *and* a live,
+  real-time SharePoint accessibility check runs using the asker's own
+  Microsoft token — so the AI can never disclose something the person
+  couldn't actually open themselves, even if FortunIQ OS's own records
+  say otherwise.
+- **A hard "exclude from AI" switch** per document — for material that
+  should stay human-readable but never touch the model, regardless of
+  classification or who's asking.
+- **Prompt-injection defences**: retrieved document content is wrapped
+  in explicit untrusted-data markers, with system-level rules against
+  following instructions found inside a document.
+- **The AI is architecturally read-and-assist only** — no tools, no
+  function-calling, no ability to take any action. Documented human-in-
+  the-loop architecture for whenever write features get built.
+- **A dedicated AI Security Log**, separate from the general audit
+  trail — who asked, when, which documents were in scope — deliberately
+  never the prompt text or document content itself.
+- **22 new automated tests** (127 total) covering every classification
+  level against every role, including your exact HR/payroll scenario.
+
+## Previous build (v7): Roles, Audit Logs & Security Hardening
 
 - **Six named, documented roles** replace the old simple admin/non-admin
   toggle — see `docs/ROLES_AND_PERMISSIONS.md` for the full reasoning and
@@ -33,7 +61,7 @@ AI Assistant, and Vitest for automated testing.**
 ## Setup, in order
 
 1. **Database** — `supabase/SETUP.md` (first time) or the individual
-   `migration_v2...` through `migration_v6...` files if adding to an
+   `migration_v2...` through `migration_v7...` files if adding to an
    existing setup, in numeric order
 2. **Microsoft Login** — `docs/MICROSOFT_LOGIN_SETUP.md`
 3. **Admin & Permissions** — `docs/PERMISSIONS_SETUP.md`, then
@@ -41,10 +69,17 @@ AI Assistant, and Vitest for automated testing.**
 4. **SharePoint** — `docs/SHAREPOINT_SETUP.md`
 5. **Security** — `docs/SECURITY.md` (includes MFA setup — do this one,
    it's quick and important)
-6. **AI Assistant** (optional) — `docs/AI_ASSISTANT_SETUP.md`
-5. Copy `.env.local.example` to `.env.local` and fill in your values,
-   **including the new `SUPABASE_SERVICE_ROLE_KEY`**
-6. `npm install && npm run dev`
+6. **AI Assistant** (optional) — `docs/AI_ASSISTANT_SETUP.md`, then
+   **`docs/AI_SECURITY.md`** — read this one before turning the AI
+   Assistant on for your whole team, since it explains exactly what the
+   AI can and can't see and how document classification works
+7. Copy `.env.local.example` to `.env.local` and fill in your values,
+   **including `SUPABASE_SERVICE_ROLE_KEY`**
+8. `npm install && npm run dev`
+
+Every piece degrades gracefully if not yet connected — the app never
+crashes, it just shows placeholder data or a friendly "not connected yet"
+message until each integration is wired up.
 
 ## Important technical note
 
@@ -59,41 +94,6 @@ system. This is why `.env.local` now needs one more value than before
 (`SUPABASE_SERVICE_ROLE_KEY`) — find it in Supabase under Settings → API.
 This key is powerful (full database access) and must never be shared
 publicly or committed anywhere visible — treat it like a master password.
-
-## What's in this build
-
-| Module | Status |
-|---|---|
-| Dashboard | ✅ Built, database-connected |
-| People | ✅ Built, database-connected |
-| Academy | ✅ Built, database-connected |
-| Documents | ✅ Built, database-connected |
-| Tenders | ✅ Built, database-connected |
-| Finance | ✅ Built, database-connected |
-| Operations | ✅ Built, database-connected |
-| Customers | ✅ Built, database-connected |
-| Sales | ✅ Built, database-connected |
-| Reports | ✅ Built, cross-module analytics |
-| AI Assistant | ✅ Built, real Claude-powered chat |
-| Settings | ✅ Built, live integration status |
-
-The whole app sits behind real Microsoft 365 sign-in — nobody outside your
-organisation can access any page or data.
-
-## Setup, in order
-
-1. **Database** — see `supabase/SETUP.md` (first time) or
-   `supabase/migration_v2_add_7_modules.sql` (if you already set up the
-   database for the first 5 modules — this adds just the new tables,
-   no risk of "already exists" errors)
-2. **Microsoft Login** — see `docs/MICROSOFT_LOGIN_SETUP.md`
-3. **AI Assistant** (optional) — see `docs/AI_ASSISTANT_SETUP.md`
-4. Copy `.env.local.example` to `.env.local` and fill in your values
-5. `npm install && npm run dev`
-
-Every piece degrades gracefully if not yet connected — the app never
-crashes, it just shows placeholder data or a friendly "not connected yet"
-message until each integration is wired up.
 
 ## Running it locally
 
@@ -110,11 +110,13 @@ Then open **http://localhost:3000**.
 npm test
 ```
 
-105 tests, running in well under a second, verifying every role sees
-exactly the modules it should. See `docs/ROLES_AND_PERMISSIONS.md` for
-what these tests cover and what they can't tell you (a real, live
-walkthrough is still worth doing once — see that doc's "Manual
-verification checklist").
+105 tests verify every role sees exactly the modules it should (see
+`docs/ROLES_AND_PERMISSIONS.md`), plus 22 more verifying document
+classification and AI access control (see `docs/AI_SECURITY.md`) — 127
+in total, running in well under a second. Both docs also include a
+"Manual verification checklist" for the parts that genuinely need a
+real, live account to confirm — automated tests can't replace that
+entirely, only reduce how often you need to redo it.
 
 ## What's real vs. what's still a placeholder
 
@@ -126,6 +128,9 @@ verification checklist").
 - **The AI Assistant makes real calls to Claude**, once an Anthropic API
   key is added — it isn't a scripted demo.
 - **Documents is genuinely SharePoint-backed** — see `docs/SHAREPOINT_SETUP.md`.
+- **The AI Assistant respects document classification and real Microsoft
+  permissions** — see `docs/AI_SECURITY.md`. This isn't prompt wording;
+  it's enforced in code before the model is ever called.
 - **Audit logging is real** for the actions that can currently happen
   in-app (sign-ins, permission changes, document actions) — see
   `docs/AUDIT_LOGS.md` for the honest gap around customer/employee record
@@ -163,6 +168,9 @@ src/
     permissions-core.ts       → pure, unit-tested role/module logic — no auth or database dependency
     permissions.ts            → session-aware permission checks, built on permissions-core.ts
     permissions.test.ts       → 105 automated tests — run with `npm test`
+    ai-security-core.ts        → pure, unit-tested document classification/authorisation logic
+    ai-security-core.test.ts   → 22 automated tests covering classification × role scenarios
+    ai-security.ts              → logAISecurityEvent() — the AI-specific security log
     audit.ts                  → the logAudit() helper used throughout the app
     rate-limit.ts             → Supabase-backed rate limiting, used by the AI Assistant
   auth.ts                   → Microsoft Login configuration, session expiry, sign-in audit logging
@@ -178,6 +186,7 @@ supabase/
   migration_v4_add_sharepoint.sql           → SharePoint metadata columns on Documents
   migration_v5_add_roles_and_audit.sql      → the six named roles + audit_logs table
   migration_v6_security_hardening.sql        → deliberate RLS deny-all + rate limiting table
+  migration_v7_ai_security.sql               → document classification + ai_security_logs table
   SETUP.md                                  → step-by-step guide
 docs/
   MICROSOFT_LOGIN_SETUP.md    → step-by-step guide
@@ -187,6 +196,7 @@ docs/
   SECURITY.md                    → session expiry, MFA setup, RLS, rate limiting, API keys
   SHAREPOINT_SETUP.md            → step-by-step guide
   AI_ASSISTANT_SETUP.md           → step-by-step guide
+  AI_SECURITY.md                   → the full AI security architecture, requirement-by-requirement
 ```
 
 ## Brand system

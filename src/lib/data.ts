@@ -51,11 +51,15 @@ export async function getLearningPaths() {
 }
 
 export async function getDocuments() {
-  if (!supabaseConfigured) return mock.documents.map((d) => ({ ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null }));
+  const mockFallback = () => mock.documents.map((d) => ({
+    ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null,
+    classification: "Internal" as const, authorizedRoles: [] as string[], authorizedEmails: [] as string[], aiExcluded: false,
+  }));
+  if (!supabaseConfigured) return mockFallback();
   try {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("documents").select("*").order("updated_at", { ascending: false });
-    if (error || !data || data.length === 0) return mock.documents.map((d) => ({ ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null }));
+    if (error || !data || data.length === 0) return mockFallback();
     return data.map((d) => ({
       id: d.id,
       name: d.name,
@@ -66,9 +70,13 @@ export async function getDocuments() {
       status: d.status ?? "Draft",
       sharepointItemId: d.sharepoint_item_id,
       sharepointWebUrl: d.sharepoint_web_url,
+      classification: (d.classification ?? "Internal") as "General" | "Internal" | "Confidential" | "Highly Confidential",
+      authorizedRoles: (d.authorized_roles ?? []) as string[],
+      authorizedEmails: (d.authorized_emails ?? []) as string[],
+      aiExcluded: !!d.ai_excluded,
     }));
   } catch {
-    return mock.documents.map((d) => ({ ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null }));
+    return mockFallback();
   }
 }
 
