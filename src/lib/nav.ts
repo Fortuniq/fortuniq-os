@@ -26,7 +26,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", key: "dashboard", icon: LayoutDashboard, description: "Company-wide overview" },
-  { label: "People", href: "/people", key: "people", icon: Users, description: "Employees & interns" },
+  { label: "Employee Hub", href: "/people", key: "people", icon: Users, description: "Directory, profiles & personnel records" },
   { label: "Academy", href: "/academy", key: "academy", icon: GraduationCap, description: "Training & onboarding" },
   { label: "Documents", href: "/documents", key: "documents", icon: FolderOpen, description: "Policies, SOPs & licences" },
   { label: "Tenders", href: "/tenders", key: "tenders", icon: ClipboardList, description: "Tender register & compliance" },
@@ -35,7 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Customers", href: "/customers", key: "customers", icon: UserSquare2, description: "Client accounts" },
   { label: "Sales", href: "/sales", key: "sales", icon: TrendingUp, description: "Pipeline, quotes & follow-ups" },
   { label: "Reports", href: "/reports", key: "reports", icon: BarChart3, description: "Analytics across the business" },
-  { label: "AI Assistant", href: "/ai", key: "ai", icon: Sparkles, description: "Ask FortunIQ AI anything" },
+  { label: "FortunIQ Intelligence", href: "/ai", key: "ai", icon: Sparkles, description: "Ask FortunIQ Intelligence anything" },
   { label: "Audit Logs", href: "/audit", key: "audit", icon: ShieldCheck, description: "Who did what, and when" },
   { label: "Settings", href: "/settings", key: "settings", icon: Settings, description: "Org, users & integrations" },
 ];

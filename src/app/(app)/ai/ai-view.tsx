@@ -58,7 +58,7 @@ export function AIView() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
-      <PageHeader title="AI Assistant" description="Ask FortunIQ AI to draft, summarise, or prepare anything." />
+      <PageHeader title="FortunIQ Intelligence" description="Ask FortunIQ Intelligence to draft, summarise, or prepare anything." />
 
       {messages.length === 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
@@ -123,7 +123,7 @@ export function AIView() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask FortunIQ AI anything…"
+            placeholder="Ask FortunIQ Intelligence anything…"
             className="flex-1 px-4 py-2.5 rounded-lg bg-surface border border-border text-sm focus:outline-none focus:ring-2 focus:ring-orange/40 focus:border-orange"
           />
           <button

@@ -1,16 +1,40 @@
-# FortunIQ OS — v8 Build — AI Security & Information Classification
+# FortunIQ OS — v9 Build — Employee Hub (Phase 1) & FortunIQ Intelligence
 
-The complete internal operating system for FortunIQ Fuels — now with a
-full **AI security architecture**: information classification (General
-through Highly Confidential), real-time permission inheritance so the AI
-can never see more than the person asking it, prompt-injection defences,
-and a dedicated AI security log — backed by **127 automated tests**.
+The complete internal operating system for FortunIQ Fuels — now with the
+start of a real **Employee Lifecycle Management system**: a searchable
+Employee Directory, a full digital personnel file per employee, and
+genuinely server-enforced protection on banking and tax data. The AI
+Assistant is now branded **FortunIQ Intelligence** throughout. Backed by
+**138 automated tests**.
 
 Built with **React, Next.js (App Router), TypeScript, Tailwind CSS,
-Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude for the
-AI Assistant, and Vitest for automated testing.**
+Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude
+(as FortunIQ Intelligence), and Vitest for automated testing.**
 
 ## What's new in this build
+
+- **Employee Hub** replaces the old simple People list — a searchable,
+  card-based directory, and a full profile per employee at `/people/[id]`
+  covering every field from your brief: employment details, contact info,
+  restricted financial data, skills, certifications, equipment, performance,
+  leave balance, and system access.
+- **Real, server-enforced protection on banking details and tax numbers**
+  — not a UI toggle. Verified directly during development that an
+  unauthorised person's browser never receives the actual values at all.
+  Visible only to the employee themselves, HR/Admin, Finance, and Super
+  Admin. See `docs/EMPLOYEE_HUB.md`.
+- **11 new automated tests** (138 total) covering the restricted-field
+  rule against every role.
+- **The AI Assistant is now "FortunIQ Intelligence"** throughout the app,
+  matching your brand.
+- **A clear, honest roadmap** for the rest of the Employee Lifecycle
+  Management system — Onboarding/Offboarding, Attendance, Leave,
+  Performance, Payroll, Expenses, Benefits, Compliance Dashboard,
+  Self-Service, and Manager Portal are all genuinely separate systems,
+  not built yet — see `docs/EMPLOYEE_HUB.md` for exactly what's involved
+  in each and a sensible build order.
+
+## Previous build (v8): AI Security & Information Classification
 
 - **Document classification**: every document is General, Internal,
   Confidential, or Highly Confidential. Confidential and above require
@@ -35,8 +59,8 @@ AI Assistant, and Vitest for automated testing.**
 - **A dedicated AI Security Log**, separate from the general audit
   trail — who asked, when, which documents were in scope — deliberately
   never the prompt text or document content itself.
-- **22 new automated tests** (127 total) covering every classification
-  level against every role, including your exact HR/payroll scenario.
+- **22 automated tests** covering every classification level against
+  every role, including the exact HR/payroll scenario. See `docs/AI_SECURITY.md`.
 
 ## Previous build (v7): Roles, Audit Logs & Security Hardening
 
@@ -61,7 +85,7 @@ AI Assistant, and Vitest for automated testing.**
 ## Setup, in order
 
 1. **Database** — `supabase/SETUP.md` (first time) or the individual
-   `migration_v2...` through `migration_v7...` files if adding to an
+   `migration_v2...` through `migration_v8...` files if adding to an
    existing setup, in numeric order
 2. **Microsoft Login** — `docs/MICROSOFT_LOGIN_SETUP.md`
 3. **Admin & Permissions** — `docs/PERMISSIONS_SETUP.md`, then
@@ -111,11 +135,13 @@ npm test
 ```
 
 105 tests verify every role sees exactly the modules it should (see
-`docs/ROLES_AND_PERMISSIONS.md`), plus 22 more verifying document
-classification and AI access control (see `docs/AI_SECURITY.md`) — 127
-in total, running in well under a second. Both docs also include a
-"Manual verification checklist" for the parts that genuinely need a
-real, live account to confirm — automated tests can't replace that
+`docs/ROLES_AND_PERMISSIONS.md`), 22 verify document classification and
+AI access control (see `docs/AI_SECURITY.md`), and 11 verify restricted
+employee data access — banking and tax details (see
+`docs/EMPLOYEE_HUB.md`) — **138 in total**, running in well under a
+second. All three docs also include a "Manual verification checklist"
+for the parts that genuinely need a real, live account to confirm —
+automated tests can't replace that
 entirely, only reduce how often you need to redo it.
 
 ## What's real vs. what's still a placeholder
@@ -187,6 +213,7 @@ supabase/
   migration_v5_add_roles_and_audit.sql      → the six named roles + audit_logs table
   migration_v6_security_hardening.sql        → deliberate RLS deny-all + rate limiting table
   migration_v7_ai_security.sql               → document classification + ai_security_logs table
+  migration_v8_employee_hub.sql               → Employee Directory, full profiles, restricted fields
   SETUP.md                                  → step-by-step guide
 docs/
   MICROSOFT_LOGIN_SETUP.md    → step-by-step guide
@@ -197,6 +224,7 @@ docs/
   SHAREPOINT_SETUP.md            → step-by-step guide
   AI_ASSISTANT_SETUP.md           → step-by-step guide
   AI_SECURITY.md                   → the full AI security architecture, requirement-by-requirement
+  EMPLOYEE_HUB.md                    → what Phase 1 built, restricted field security, and the full roadmap
 ```
 
 ## Brand system

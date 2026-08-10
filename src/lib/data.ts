@@ -26,6 +26,154 @@ export async function getEmployees() {
   }
 }
 
+// ---------- EMPLOYEE HUB ----------
+export type EmployeeDirectoryEntry = {
+  id: string;
+  employeeNumber: string | null;
+  name: string;
+  preferredName: string | null;
+  photoUrl: string | null;
+  role: string;
+  dept: string;
+  officeLocation: string | null;
+  managerName: string | null;
+  status: string;
+  employmentType: string | null;
+  email: string | null;
+};
+
+function mockEmployeeDirectory(): EmployeeDirectoryEntry[] {
+  return mock.employees.map((e) => ({
+    id: String(e.id), employeeNumber: `EMP-${String(e.id).padStart(4, "0")}`, name: e.name,
+    preferredName: null, photoUrl: null, role: e.role, dept: e.dept, officeLocation: null,
+    managerName: null, status: e.status, employmentType: e.type === "Intern" ? "Intern" : "Full-Time", email: null,
+  }));
+}
+
+export async function getEmployeeDirectory(): Promise<EmployeeDirectoryEntry[]> {
+  if (!supabaseConfigured) return mockEmployeeDirectory();
+  try {
+    const supabase = createServiceClient();
+    const { data, error } = await supabase.from("employees").select("*").order("name");
+    if (error || !data || data.length === 0) return mockEmployeeDirectory();
+    const byId = new Map(data.map((e) => [e.id, e]));
+    return data.map((e) => ({
+      id: e.id,
+      employeeNumber: e.employee_number,
+      name: e.name,
+      preferredName: e.preferred_name,
+      photoUrl: e.photo_url,
+      role: e.role,
+      dept: e.dept,
+      officeLocation: e.office_location,
+      managerName: e.manager_id ? (byId.get(e.manager_id)?.name ?? null) : null,
+      status: e.status,
+      employmentType: e.employment_type,
+      email: e.email,
+    }));
+  } catch {
+    return mockEmployeeDirectory();
+  }
+}
+
+export type EmployeeProfile = {
+  id: string;
+  employeeNumber: string | null;
+  name: string;
+  preferredName: string | null;
+  photoUrl: string | null;
+  role: string;
+  dept: string;
+  managerName: string | null;
+  officeLocation: string | null;
+  status: string;
+  employmentType: string | null;
+  startDate: string;
+  probationStatus: string | null;
+  email: string | null;
+  phone: string | null;
+  emergencyContact: { name?: string; relationship?: string; phone?: string } | null;
+  nextOfKin: { name?: string; relationship?: string; phone?: string } | null;
+  bankingDetails: { bank?: string; accountNumber?: string; branchCode?: string; accountType?: string } | null;
+  taxNumber: string | null;
+  skills: string[];
+  performanceRating: string | null;
+  leaveBalance: Record<string, number> | null;
+  archived: boolean;
+  equipment: { id: string; item: string; serialNumber: string | null; issuedDate: string; returnedDate: string | null; status: string }[];
+  certifications: { id: string; name: string; issuedDate: string | null; expiryDate: string | null }[];
+};
+
+export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | null> {
+  if (!supabaseConfigured) {
+    const mockEmp = mock.employees.find((e) => String(e.id) === id);
+    if (!mockEmp) return null;
+    return {
+      id: String(mockEmp.id), employeeNumber: `EMP-${String(mockEmp.id).padStart(4, "0")}`,
+      name: mockEmp.name, preferredName: null, photoUrl: null, role: mockEmp.role, dept: mockEmp.dept,
+      managerName: null, officeLocation: "Head Office, Pretoria North", status: mockEmp.status,
+      employmentType: mockEmp.type === "Intern" ? "Intern" : "Full-Time", startDate: mockEmp.start,
+      probationStatus: mockEmp.status === "Onboarding" ? "In Probation" : "Confirmed",
+      email: `${mockEmp.name.toLowerCase().replace(" ", ".")}@iqfuels.co.za`, phone: null,
+      emergencyContact: null, nextOfKin: null, bankingDetails: null, taxNumber: null,
+      skills: [], performanceRating: null,
+      leaveBalance: { annual: 15, sick: 10, family_responsibility: 3 },
+      archived: false, equipment: [], certifications: [],
+    };
+  }
+  try {
+    const supabase = createServiceClient();
+    const { data: e, error } = await supabase.from("employees").select("*").eq("id", id).maybeSingle();
+    if (error || !e) return null;
+
+    let managerName: string | null = null;
+    if (e.manager_id) {
+      const { data: mgr } = await supabase.from("employees").select("name").eq("id", e.manager_id).maybeSingle();
+      managerName = mgr?.name ?? null;
+    }
+
+    const [{ data: equipment }, { data: certifications }] = await Promise.all([
+      supabase.from("employee_equipment").select("*").eq("employee_id", id).order("issued_date", { ascending: false }),
+      supabase.from("employee_certifications").select("*").eq("employee_id", id).order("issued_date", { ascending: false }),
+    ]);
+
+    return {
+      id: e.id,
+      employeeNumber: e.employee_number,
+      name: e.name,
+      preferredName: e.preferred_name,
+      photoUrl: e.photo_url,
+      role: e.role,
+      dept: e.dept,
+      managerName,
+      officeLocation: e.office_location,
+      status: e.status,
+      employmentType: e.employment_type,
+      startDate: e.start_date,
+      probationStatus: e.probation_status,
+      email: e.email,
+      phone: e.phone,
+      emergencyContact: e.emergency_contact,
+      nextOfKin: e.next_of_kin,
+      bankingDetails: e.banking_details,
+      taxNumber: e.tax_number,
+      skills: e.skills ?? [],
+      performanceRating: e.performance_rating,
+      leaveBalance: e.leave_balance,
+      archived: !!e.archived,
+      equipment: (equipment ?? []).map((eq) => ({
+        id: eq.id, item: eq.item, serialNumber: eq.serial_number,
+        issuedDate: eq.issued_date, returnedDate: eq.returned_date, status: eq.status,
+      })),
+      certifications: (certifications ?? []).map((c) => ({
+        id: c.id, name: c.name, issuedDate: c.issued_date, expiryDate: c.expiry_date,
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getCourses() {
   if (!supabaseConfigured) return mock.courses;
   try {

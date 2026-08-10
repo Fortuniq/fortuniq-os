@@ -62,14 +62,14 @@ export function AuditView({
     <div>
       <PageHeader
         title="Audit Logs"
-        description="A record of sign-ins, permission changes, document activity, and AI Assistant use across FortunIQ OS."
+        description="A record of sign-ins, permission changes, document activity, and FortunIQ Intelligence use across FortunIQ OS."
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
         <StatCard label="Sign-ins (all time)" value={String(roleCounts.signIns)} icon={LogIn} />
         <StatCard label="Permission Changes" value={String(roleCounts.permissionChanges)} icon={UserCog} />
         <StatCard label="Document Views" value={String(roleCounts.documentViews)} icon={Eye} />
-        <StatCard label="AI Assistant Queries" value={String(roleCounts.aiQueries)} icon={Sparkles} />
+        <StatCard label="FortunIQ Intelligence Queries" value={String(roleCounts.aiQueries)} icon={Sparkles} />
       </div>
 
       <Card>
@@ -126,7 +126,7 @@ export function AuditView({
         </CardHeader>
         <CardBody className="pt-2">
           {aiLogs.length === 0 ? (
-            <p className="text-sm text-grey py-8 text-center">No AI Assistant activity recorded yet.</p>
+            <p className="text-sm text-grey py-8 text-center">No FortunIQ Intelligence activity recorded yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

@@ -1,77 +1,102 @@
 "use client";
 
-import { Plus, Mail } from "lucide-react";
+import { useState } from "react";
+import Link from "next/link";
+import { Search, Users, GraduationCap, UserCheck, Clock, MapPin } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, type Column } from "@/components/ui/DataTable";
-import { Users, GraduationCap, UserCheck, Clock } from "lucide-react";
-import { formatDate } from "@/lib/format";
+import type { EmployeeDirectoryEntry } from "@/lib/data";
 
-type Employee = {
-  id: string | number;
-  name: string;
-  role: string;
-  dept: string;
-  type: string;
-  status: string;
-  start: string;
-};
+function initials(name: string) {
+  return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+}
 
-const columns: Column<Employee>[] = [
-  {
-    key: "name",
-    header: "Name",
-    render: (r) => (
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-full bg-navy text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-          {r.name.split(" ").map((n) => n[0]).join("")}
-        </div>
-        <span className="font-medium">{r.name}</span>
-      </div>
-    ),
-  },
-  { key: "role", header: "Role" },
-  { key: "dept", header: "Department" },
-  { key: "type", header: "Type", render: (r) => <Badge tone={r.type === "Intern" ? "orange" : "neutral"}>{r.type}</Badge> },
-  { key: "status", header: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
-  { key: "start", header: "Start Date", render: (r) => formatDate(r.start) },
-];
+export function PeopleView({ employees }: { employees: EmployeeDirectoryEntry[] }) {
+  const [query, setQuery] = useState("");
 
-export function PeopleView({ employees }: { employees: Employee[] }) {
-  const interns = employees.filter((e) => e.type === "Intern").length;
+  const interns = employees.filter((e) => e.employmentType === "Intern").length;
   const onboarding = employees.filter((e) => e.status === "Onboarding").length;
+  const active = employees.filter((e) => e.status === "Active").length;
+
+  const filtered = employees.filter((e) => {
+    const q = query.toLowerCase();
+    return (
+      e.name.toLowerCase().includes(q) ||
+      e.role.toLowerCase().includes(q) ||
+      e.dept.toLowerCase().includes(q) ||
+      (e.employeeNumber ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div>
       <PageHeader
-        title="People"
-        description="Employees and interns across FortunIQ Fuels."
+        title="Employee Hub"
+        description="The single source of truth for every employee at FortunIQ Fuels — directory, profiles, and personnel records."
         action={
-          <button className="flex items-center gap-2 bg-navy text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-orange transition-colors">
-            <Plus className="w-4 h-4" /> Add Person
-          </button>
+          <div className="relative">
+            <Search className="w-4 h-4 text-light-grey absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, role, department…"
+              className="pl-9 pr-4 py-2 rounded-lg bg-white border border-border text-sm w-72 focus:outline-none focus:ring-2 focus:ring-orange/40"
+            />
+          </div>
         }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Headcount" value={String(employees.length)} icon={Users} />
-        <StatCard label="Interns" value={String(interns)} sub="Across 3 departments" icon={GraduationCap} />
-        <StatCard label="Active" value={String(employees.filter((e) => e.status === "Active").length)} icon={UserCheck} />
+        <StatCard label="Interns" value={String(interns)} icon={GraduationCap} />
+        <StatCard label="Active" value={String(active)} icon={UserCheck} />
         <StatCard label="Onboarding" value={String(onboarding)} sub="Starting this month" icon={Clock} />
       </div>
 
-      <Card>
-        <CardBody className="pt-5">
-          <DataTable columns={columns} data={employees} />
-        </CardBody>
-      </Card>
-
-      <div className="mt-4 flex items-center gap-2 text-xs text-light-grey">
-        <Mail className="w-3.5 h-3.5" />
-        People data here reflects the FortunIQ Fuels Employee & Intern Handbook — appointment, confidentiality and Code of Conduct records link from each profile in the full build.
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filtered.map((emp) => (
+          <Link key={emp.id} href={`/people/${emp.id}`}>
+            <Card className="p-4 hover:border-orange transition-colors cursor-pointer h-full">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-full bg-navy text-white text-sm font-bold flex items-center justify-center shrink-0 overflow-hidden">
+                  {emp.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={emp.photoUrl} alt={emp.name} className="w-full h-full object-cover" />
+                  ) : (
+                    initials(emp.name)
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-navy text-sm truncate">{emp.preferredName || emp.name}</p>
+                  <p className="text-xs text-grey truncate">{emp.role}</p>
+                </div>
+                <Badge tone={statusTone(emp.status)}>{emp.status}</Badge>
+              </div>
+              <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-xs text-light-grey">
+                <span>{emp.dept}</span>
+                {emp.officeLocation && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> {emp.officeLocation}
+                  </span>
+                )}
+              </div>
+              {emp.employeeNumber && (
+                <p className="text-[10px] text-light-grey mt-1.5 font-mono">{emp.employeeNumber}</p>
+              )}
+            </Card>
+          </Link>
+        ))}
       </div>
+
+      {filtered.length === 0 && (
+        <Card>
+          <CardBody className="text-center py-12">
+            <p className="text-sm text-grey">No one matches &ldquo;{query}&rdquo;.</p>
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }

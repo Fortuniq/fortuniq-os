@@ -164,7 +164,7 @@ export function SettingsView({
               detail={user ? "Restricted to your organisation's Microsoft 365 accounts" : "Not signed in"}
             />
             <StatusRow
-              label="AI Assistant (Claude)"
+              label="FortunIQ Intelligence (Claude)"
               connected={aiConfigured}
               detail={aiConfigured ? "Connected and answering" : "Add ANTHROPIC_API_KEY — see docs/AI_ASSISTANT_SETUP.md"}
             />

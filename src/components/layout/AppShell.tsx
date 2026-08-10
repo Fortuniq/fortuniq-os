@@ -32,7 +32,7 @@ export function AppShell({
       <Link
         href="/ai"
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-navy text-white shadow-lg hover:bg-orange transition-colors flex items-center justify-center z-30"
-        title="Ask FortunIQ AI"
+        title="Ask FortunIQ Intelligence"
       >
         <Sparkles className="w-6 h-6" />
       </Link>

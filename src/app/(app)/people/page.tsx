@@ -1,9 +1,9 @@
-import { getEmployees } from "@/lib/data";
+import { getEmployeeDirectory } from "@/lib/data";
 import { requireModuleAccess } from "@/lib/permissions";
 import { PeopleView } from "./people-view";
 
 export default async function PeoplePage() {
   await requireModuleAccess("people");
-  const employees = await getEmployees();
+  const employees = await getEmployeeDirectory();
   return <PeopleView employees={employees} />;
 }
