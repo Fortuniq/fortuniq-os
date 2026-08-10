@@ -2,39 +2,50 @@
 
 import { useState, useTransition } from "react";
 import { UserPlus, Shield, Trash2, X } from "lucide-react";
-import { ALL_MODULES, type ModuleKey } from "@/lib/permissions";
-import { addTeamMember, updateTeamMemberModules, setTeamMemberAdmin, removeTeamMember } from "./team-actions";
+import { ALL_MODULES, ALL_ROLES, type ModuleKey, type RoleKey } from "@/lib/permissions";
+import { addTeamMember, updateTeamMemberModules, setTeamMemberRole, removeTeamMember } from "./team-actions";
 
 type TeamMember = {
   email: string;
   name: string | null;
   is_admin: boolean;
+  role: RoleKey | null;
   allowed_modules: ModuleKey[];
+};
+
+const ROLE_DESCRIPTIONS: Record<RoleKey, string> = {
+  "Super Admin": "Everything, including Team Management and Audit Logs.",
+  "Management": "Broad visibility across the business, not including Team Management.",
+  "HR/Admin": "People, Academy, Documents, and Audit Logs. Not Finance or Sales figures.",
+  "Finance": "Finance, Reports, Documents. Not People/HR records.",
+  "Sales/Marketing": "Customers, Sales, Reports, Documents. Not Finance.",
+  "Employee": "Dashboard, Academy, Documents, AI Assistant. The default, most restrictive role.",
 };
 
 export function TeamManagement({ members, currentUserEmail }: { members: TeamMember[]; currentUserEmail?: string }) {
   const [isPending, startTransition] = useTransition();
   const [showAddForm, setShowAddForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
 
-  function handleModuleToggle(member: TeamMember, moduleKey: ModuleKey) {
-    if (member.is_admin) return; // admins always have everything
-    const next = member.allowed_modules.includes(moduleKey)
-      ? member.allowed_modules.filter((m) => m !== moduleKey)
-      : [...member.allowed_modules, moduleKey];
+  function handleRoleChange(member: TeamMember, role: RoleKey) {
     startTransition(async () => {
       try {
-        await updateTeamMemberModules(member.email, next);
+        await setTeamMemberRole(member.email, role);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
       }
     });
   }
 
-  function handleAdminToggle(member: TeamMember) {
+  function handleModuleToggle(member: TeamMember, moduleKey: ModuleKey) {
+    if (member.role === "Super Admin") return; // Super Admins always have everything
+    const next = member.allowed_modules.includes(moduleKey)
+      ? member.allowed_modules.filter((m) => m !== moduleKey)
+      : [...member.allowed_modules, moduleKey];
     startTransition(async () => {
       try {
-        await setTeamMemberAdmin(member.email, !member.is_admin);
+        await updateTeamMemberModules(member.email, next);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
       }
@@ -114,79 +125,90 @@ export function TeamManagement({ members, currentUserEmail }: { members: TeamMem
             Add
           </button>
           <p className="text-xs text-light-grey w-full">
-            New people start with just Dashboard and Settings access — grant more modules below once added.
-            They'll be able to sign in as soon as they use their Microsoft account.
+            New people start as <strong>Employee</strong> — the most restrictive role — until you assign them
+            something else below. They can sign in as soon as they use their Microsoft account.
           </p>
         </form>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="py-2 pr-4 text-xs font-semibold uppercase tracking-wide text-grey">Person</th>
-              <th className="py-2 pr-4 text-xs font-semibold uppercase tracking-wide text-grey">Admin</th>
-              {ALL_MODULES.map((m) => (
-                <th key={m.key} className="py-2 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-grey text-center" title={m.label}>
-                  {m.label.slice(0, 3)}
-                </th>
-              ))}
-              <th className="py-2 pl-4"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((member) => (
-              <tr key={member.email} className="border-b border-border last:border-0">
-                <td className="py-3 pr-4">
-                  <p className="font-medium text-navy">{member.name || member.email}</p>
-                  <p className="text-xs text-light-grey">{member.email}</p>
-                </td>
-                <td className="py-3 pr-4">
-                  <button
-                    onClick={() => handleAdminToggle(member)}
-                    disabled={isPending || member.email === currentUserEmail}
-                    title={member.email === currentUserEmail ? "You can't change your own admin status" : ""}
-                    className="disabled:opacity-40"
-                  >
-                    {member.is_admin ? (
-                      <span className="flex items-center gap-1 text-xs font-semibold text-orange">
-                        <Shield className="w-3.5 h-3.5 fill-orange/20" /> Admin
-                      </span>
-                    ) : (
-                      <span className="text-xs text-light-grey hover:text-navy transition-colors">Make admin</span>
-                    )}
-                  </button>
-                </td>
+      <div className="space-y-2">
+        {members.map((member) => (
+          <div key={member.email} className="border border-border rounded-lg">
+            <div className="flex items-center gap-3 p-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-navy text-sm">{member.name || member.email}</p>
+                <p className="text-xs text-light-grey">{member.email}</p>
+              </div>
+
+              <select
+                value={member.role ?? "Employee"}
+                onChange={(e) => handleRoleChange(member, e.target.value as RoleKey)}
+                disabled={isPending || member.email === currentUserEmail}
+                title={member.email === currentUserEmail ? "You can't change your own role" : "Change role"}
+                className="text-xs font-semibold rounded-lg border border-border px-2 py-1.5 disabled:opacity-40"
+              >
+                {ALL_ROLES.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+
+              {member.role === "Super Admin" && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-orange shrink-0">
+                  <Shield className="w-3.5 h-3.5 fill-orange/20" />
+                </span>
+              )}
+
+              <button
+                onClick={() => setExpandedEmail(expandedEmail === member.email ? null : member.email)}
+                className="text-xs text-grey hover:text-navy transition-colors shrink-0"
+              >
+                {expandedEmail === member.email ? "Hide modules" : "Fine-tune"}
+              </button>
+
+              <button
+                onClick={() => handleRemove(member)}
+                disabled={isPending || member.email === currentUserEmail}
+                className="text-grey hover:text-red-600 transition-colors disabled:opacity-30 shrink-0"
+                title={member.email === currentUserEmail ? "You can't remove yourself" : "Remove access"}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-light-grey px-3 pb-2">
+              {ROLE_DESCRIPTIONS[member.role ?? "Employee"]}
+            </p>
+
+            {expandedEmail === member.email && (
+              <div className="border-t border-border bg-surface p-3 flex flex-wrap gap-3">
                 {ALL_MODULES.map((m) => (
-                  <td key={m.key} className="py-3 px-1.5 text-center">
+                  <label key={m.key} className="flex items-center gap-1.5 text-xs text-navy">
                     <input
                       type="checkbox"
-                      checked={member.is_admin || member.allowed_modules.includes(m.key)}
-                      disabled={isPending || member.is_admin || (m.key === "dashboard" || m.key === "settings")}
+                      checked={member.role === "Super Admin" || member.allowed_modules.includes(m.key)}
+                      disabled={
+                        isPending ||
+                        member.role === "Super Admin" ||
+                        m.key === "dashboard" ||
+                        m.key === "settings"
+                      }
                       onChange={() => handleModuleToggle(member, m.key)}
-                      className="w-4 h-4 accent-orange"
+                      className="w-3.5 h-3.5 accent-orange"
                     />
-                  </td>
+                    {m.label}
+                  </label>
                 ))}
-                <td className="py-3 pl-4 text-right">
-                  <button
-                    onClick={() => handleRemove(member)}
-                    disabled={isPending || member.email === currentUserEmail}
-                    className="text-grey hover:text-red-600 transition-colors disabled:opacity-30"
-                    title={member.email === currentUserEmail ? "You can't remove yourself" : "Remove access"}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       <p className="text-[11px] text-light-grey mt-4">
-        Dashboard and Settings are always available to anyone provisioned, so nobody gets locked out entirely.
-        Admins automatically have every module — individual checkboxes only apply to non-admins.
+        Choosing a role sets that role&apos;s documented default modules immediately — use &ldquo;Fine-tune&rdquo;
+        if one specific person genuinely needs an exception. Dashboard and Settings are always available to
+        anyone provisioned, so nobody gets locked out entirely. See docs/ROLES_AND_PERMISSIONS.md for the full
+        reasoning behind each role.
       </p>
     </div>
   );

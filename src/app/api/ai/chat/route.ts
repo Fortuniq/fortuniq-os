@@ -3,6 +3,7 @@ import { getCurrentUserPermissions, hasModuleAccess } from "@/lib/permissions";
 import { auth } from "@/auth";
 import { getDocuments } from "@/lib/data";
 import { getDocumentTextContent, isSharePointConfigured } from "@/lib/graph";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 
 const SYSTEM_PROMPT = `You are the FortunIQ AI Assistant, built into FortunIQ OS — the internal
@@ -54,6 +55,17 @@ export async function POST(req: Request) {
   }
   if (!hasModuleAccess(permissions, "ai")) {
     return NextResponse.json({ error: "You don't have access to the AI Assistant." }, { status: 403 });
+  }
+
+  // Rate limit: 30 messages per person per hour. Protects against runaway
+  // cost from a bug, an accidental loop, or genuine misuse — while being
+  // generous enough that normal, heavy use of the assistant never hits it.
+  const rateLimit = await checkRateLimit(permissions.email!, "ai-chat", 30, 60 * 60);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "You've reached the AI Assistant's hourly limit (30 messages/hour). Try again shortly." },
+      { status: 429 }
+    );
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;

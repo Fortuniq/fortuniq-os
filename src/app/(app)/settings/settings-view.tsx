@@ -4,10 +4,10 @@ import { CheckCircle2, XCircle, User, Building2, Palette, Users2, Lock } from "l
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TeamManagement } from "./TeamManagement";
-import { ALL_MODULES, type UserPermissions, type ModuleKey } from "@/lib/permissions";
+import { ALL_MODULES, type UserPermissions, type ModuleKey, type RoleKey } from "@/lib/permissions";
 
 type SessionUser = { name?: string | null; email?: string | null; image?: string | null } | undefined;
-type TeamMember = { email: string; name: string | null; is_admin: boolean; allowed_modules: ModuleKey[] };
+type TeamMember = { email: string; name: string | null; is_admin: boolean; role: RoleKey | null; allowed_modules: ModuleKey[] };
 
 function StatusRow({ label, connected, detail }: { label: string; connected: boolean; detail: string }) {
   return (
@@ -70,9 +70,9 @@ export function SettingsView({
                 <p className="text-xs text-light-grey">{user?.email}</p>
               </div>
             </div>
-            {permissions.isAdmin && (
+            {permissions.role && (
               <p className="inline-flex items-center gap-1 text-xs font-semibold text-orange bg-orange/10 px-2 py-1 rounded-full">
-                Administrator
+                {permissions.role}
               </p>
             )}
             <p className="text-xs text-light-grey pt-2">

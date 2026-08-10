@@ -111,32 +111,23 @@ alter table tasks enable row level security;
 alter table notifications enable row level security;
 alter table fuel_prices enable row level security;
 
-create policy "Authenticated read employees" on employees for select using (auth.role() = 'authenticated');
-create policy "Authenticated write employees" on employees for all using (auth.role() = 'authenticated');
+create policy "No public access to employees" on employees for all using (false);
 
-create policy "Authenticated read courses" on courses for select using (auth.role() = 'authenticated');
-create policy "Authenticated write courses" on courses for all using (auth.role() = 'authenticated');
+create policy "No public access to courses" on courses for all using (false);
 
-create policy "Authenticated read learning_paths" on learning_paths for select using (auth.role() = 'authenticated');
-create policy "Authenticated write learning_paths" on learning_paths for all using (auth.role() = 'authenticated');
+create policy "No public access to learning_paths" on learning_paths for all using (false);
 
-create policy "Authenticated read documents" on documents for select using (auth.role() = 'authenticated');
-create policy "Authenticated write documents" on documents for all using (auth.role() = 'authenticated');
+create policy "No public access to documents" on documents for all using (false);
 
-create policy "Authenticated read tenders" on tenders for select using (auth.role() = 'authenticated');
-create policy "Authenticated write tenders" on tenders for all using (auth.role() = 'authenticated');
+create policy "No public access to tenders" on tenders for all using (false);
 
-create policy "Authenticated read tender_checklist_items" on tender_checklist_items for select using (auth.role() = 'authenticated');
-create policy "Authenticated write tender_checklist_items" on tender_checklist_items for all using (auth.role() = 'authenticated');
+create policy "No public access to tender_checklist_items" on tender_checklist_items for all using (false);
 
-create policy "Authenticated read tasks" on tasks for select using (auth.role() = 'authenticated');
-create policy "Authenticated write tasks" on tasks for all using (auth.role() = 'authenticated');
+create policy "No public access to tasks" on tasks for all using (false);
 
-create policy "Authenticated read notifications" on notifications for select using (auth.role() = 'authenticated');
-create policy "Authenticated write notifications" on notifications for all using (auth.role() = 'authenticated');
+create policy "No public access to notifications" on notifications for all using (false);
 
-create policy "Authenticated read fuel_prices" on fuel_prices for select using (auth.role() = 'authenticated');
-create policy "Authenticated write fuel_prices" on fuel_prices for all using (auth.role() = 'authenticated');
+create policy "No public access to fuel_prices" on fuel_prices for all using (false);
 
 -- ---------- FINANCE ----------
 create table invoices (
@@ -229,26 +220,18 @@ alter table customers enable row level security;
 alter table quotes enable row level security;
 alter table pipeline_stages enable row level security;
 
-create policy "Authenticated read invoices" on invoices for select using (auth.role() = 'authenticated');
-create policy "Authenticated write invoices" on invoices for all using (auth.role() = 'authenticated');
+create policy "No public access to invoices" on invoices for all using (false);
 
-create policy "Authenticated read expenses" on expenses for select using (auth.role() = 'authenticated');
-create policy "Authenticated write expenses" on expenses for all using (auth.role() = 'authenticated');
+create policy "No public access to expenses" on expenses for all using (false);
 
-create policy "Authenticated read suppliers" on suppliers for select using (auth.role() = 'authenticated');
-create policy "Authenticated write suppliers" on suppliers for all using (auth.role() = 'authenticated');
+create policy "No public access to suppliers" on suppliers for all using (false);
 
-create policy "Authenticated read fuel_orders" on fuel_orders for select using (auth.role() = 'authenticated');
-create policy "Authenticated write fuel_orders" on fuel_orders for all using (auth.role() = 'authenticated');
+create policy "No public access to fuel_orders" on fuel_orders for all using (false);
 
-create policy "Authenticated read fleet" on fleet for select using (auth.role() = 'authenticated');
-create policy "Authenticated write fleet" on fleet for all using (auth.role() = 'authenticated');
+create policy "No public access to fleet" on fleet for all using (false);
 
-create policy "Authenticated read customers" on customers for select using (auth.role() = 'authenticated');
-create policy "Authenticated write customers" on customers for all using (auth.role() = 'authenticated');
+create policy "No public access to customers" on customers for all using (false);
 
-create policy "Authenticated read quotes" on quotes for select using (auth.role() = 'authenticated');
-create policy "Authenticated write quotes" on quotes for all using (auth.role() = 'authenticated');
+create policy "No public access to quotes" on quotes for all using (false);
 
-create policy "Authenticated read pipeline_stages" on pipeline_stages for select using (auth.role() = 'authenticated');
-create policy "Authenticated write pipeline_stages" on pipeline_stages for all using (auth.role() = 'authenticated');
+create policy "No public access to pipeline_stages" on pipeline_stages for all using (false);

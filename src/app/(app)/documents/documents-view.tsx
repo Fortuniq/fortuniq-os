@@ -44,11 +44,11 @@ export function DocumentsView({ documents, sharePointConfigured }: { documents: 
 
   const catalogued = new Set(documents.map((d) => d.sharepointItemId).filter(Boolean));
 
-  async function openPreview(itemId: string) {
+  async function openPreview(itemId: string, name: string) {
     setPreviewLoading(itemId);
     try {
       const res = await fetch("/api/sharepoint/preview", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, name }),
       });
       const data = await res.json();
       if (res.ok) setPreviewUrl(data.previewUrl);
@@ -150,7 +150,7 @@ export function DocumentsView({ documents, sharePointConfigured }: { documents: 
                 {versionsLoading === r.sharepointItemId ? <Loader2 className="w-4 h-4 animate-spin" /> : <History className="w-4 h-4" />}
               </button>
               <button
-                onClick={() => openPreview(r.sharepointItemId!)}
+                onClick={() => openPreview(r.sharepointItemId!, r.name)}
                 disabled={previewLoading === r.sharepointItemId}
                 className="p-1.5 rounded hover:bg-surface text-grey hover:text-orange transition-colors" title="Preview"
               >

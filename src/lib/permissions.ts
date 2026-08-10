@@ -1,34 +1,26 @@
 import { auth } from "@/auth";
 import { createServiceClient } from "@/lib/supabase/service";
+import {
+  ALL_MODULES,
+  ALL_MODULE_KEYS,
+  ALL_ROLES,
+  ROLE_DEFAULT_MODULES,
+  hasModuleAccess,
+  type ModuleKey,
+  type RoleKey,
+  type UserPermissions,
+} from "@/lib/permissions-core";
 
-export type ModuleKey =
-  | "dashboard" | "people" | "academy" | "documents" | "tenders"
-  | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings";
-
-export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "people", label: "People" },
-  { key: "academy", label: "Academy" },
-  { key: "documents", label: "Documents" },
-  { key: "tenders", label: "Tenders" },
-  { key: "finance", label: "Finance" },
-  { key: "operations", label: "Operations" },
-  { key: "customers", label: "Customers" },
-  { key: "sales", label: "Sales" },
-  { key: "reports", label: "Reports" },
-  { key: "ai", label: "AI Assistant" },
-  { key: "settings", label: "Settings" },
-];
-
-const ALL_MODULE_KEYS = ALL_MODULES.map((m) => m.key);
-
-export type UserPermissions = {
-  status: "signed-out" | "pending-approval" | "active" | "no-database";
-  email?: string;
-  name?: string;
-  isAdmin: boolean;
-  allowedModules: ModuleKey[];
+// Re-export the pure, testable core so existing imports of "@/lib/permissions"
+// throughout the app keep working unchanged.
+export {
+  ALL_MODULES,
+  ALL_ROLES,
+  ROLE_DEFAULT_MODULES,
+  hasModuleAccess,
+  type ModuleKey,
+  type RoleKey,
+  type UserPermissions,
 };
 
 const supabaseConfigured =
@@ -42,7 +34,7 @@ const supabaseConfigured =
  *   since there's nowhere to store permissions yet — this only applies
  *   during initial setup)
  * - Signed in, but nobody has been set up as a user yet -> this person
- *   automatically becomes the first Admin (bootstrap)
+ *   automatically becomes the first Super Admin (bootstrap)
  * - Signed in, permissions table has people, but not this person ->
  *   "pending-approval" (an Admin needs to add them)
  * - Signed in and provisioned -> "active", with their real permissions
@@ -57,7 +49,7 @@ export async function getCurrentUserPermissions(): Promise<UserPermissions> {
   const name = session.user.name ?? email;
 
   if (!supabaseConfigured) {
-    return { status: "no-database", email, name, isAdmin: true, allowedModules: ALL_MODULE_KEYS };
+    return { status: "no-database", email, name, role: "Super Admin", isAdmin: true, allowedModules: ALL_MODULE_KEYS };
   }
 
   try {
@@ -70,12 +62,14 @@ export async function getCurrentUserPermissions(): Promise<UserPermissions> {
       .maybeSingle();
 
     if (existing) {
+      const role = (existing.role as RoleKey) ?? (existing.is_admin ? "Super Admin" : "Employee");
       return {
         status: "active",
         email,
         name: existing.name ?? name,
-        isAdmin: existing.is_admin,
-        allowedModules: existing.is_admin ? ALL_MODULE_KEYS : (existing.allowed_modules ?? []),
+        role,
+        isAdmin: role === "Super Admin",
+        allowedModules: role === "Super Admin" ? ALL_MODULE_KEYS : (existing.allowed_modules ?? []),
       };
     }
 
@@ -85,14 +79,15 @@ export async function getCurrentUserPermissions(): Promise<UserPermissions> {
       .select("*", { count: "exact", head: true });
 
     if (!count || count === 0) {
-      // Bootstrap: first person to ever sign in becomes Admin automatically.
+      // Bootstrap: first person to ever sign in becomes Super Admin automatically.
       await supabase.from("user_permissions").insert({
         email,
         name,
+        role: "Super Admin",
         is_admin: true,
         allowed_modules: ALL_MODULE_KEYS,
       });
-      return { status: "active", email, name, isAdmin: true, allowedModules: ALL_MODULE_KEYS };
+      return { status: "active", email, name, role: "Super Admin", isAdmin: true, allowedModules: ALL_MODULE_KEYS };
     }
 
     // Other people already exist, but not this person — they need an Admin
@@ -103,19 +98,6 @@ export async function getCurrentUserPermissions(): Promise<UserPermissions> {
     // rather than accidentally granting everything.
     return { status: "pending-approval", email, name, isAdmin: false, allowedModules: [] };
   }
-}
-
-export function hasModuleAccess(permissions: UserPermissions, moduleKey: ModuleKey): boolean {
-  // Dashboard and Settings are always available to anyone provisioned —
-  // Dashboard so there's always a home to land on, Settings so everyone
-  // can see their own access status even if nothing else is granted yet.
-  if (moduleKey === "dashboard" || moduleKey === "settings") {
-    return permissions.status === "active" || permissions.status === "no-database";
-  }
-  if (permissions.status === "no-database") return true;
-  if (permissions.status !== "active") return false;
-  if (permissions.isAdmin) return true;
-  return permissions.allowedModules.includes(moduleKey);
 }
 
 export const isSupabaseConfiguredForPermissions = supabaseConfigured;
