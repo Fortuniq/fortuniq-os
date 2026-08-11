@@ -133,20 +133,19 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
       return null;
     }
 
-    let managerName: string | null = null;
-    if (e.manager_id) {
-      const { data: mgr } = await supabase.from("employees").select("name").eq("id", e.manager_id).maybeSingle();
-      managerName = mgr?.name ?? null;
-    }
-
-    // Equipment and certifications are supplementary — if either query
-    // fails (e.g. a table genuinely missing), the whole profile should
-    // still load rather than disappearing entirely. Logged either way so
-    // a real problem is still visible in Netlify's function logs.
-    const [equipmentResult, certificationsResult] = await Promise.all([
+    // All three follow-up queries run in parallel rather than one after
+    // another — this alone cuts a real, measurable chunk off the page's
+    // load time, since each round-trip to the database adds its own
+    // delay, and there was no need for the manager lookup to wait for
+    // the equipment/certifications queries to even start.
+    const [mgrResult, equipmentResult, certificationsResult] = await Promise.all([
+      e.manager_id
+        ? supabase.from("employees").select("name").eq("id", e.manager_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
       supabase.from("employee_equipment").select("*").eq("employee_id", id).order("issued_date", { ascending: false }),
       supabase.from("employee_certifications").select("*").eq("employee_id", id).order("issued_date", { ascending: false }),
     ]);
+    const managerName = mgrResult.data?.name ?? null;
     if (equipmentResult.error) console.error("getEmployeeProfile: employee_equipment query error:", equipmentResult.error.message);
     if (certificationsResult.error) console.error("getEmployeeProfile: employee_certifications query error:", certificationsResult.error.message);
     const equipment = equipmentResult.data ?? [];
