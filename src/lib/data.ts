@@ -431,3 +431,175 @@ export async function getRevenueByProduct() {
     return mock.revenueByProduct;
   }
 }
+
+// ---------- ACADEMY: SCHOOLS, COURSES, LESSONS, QUIZZES ----------
+
+export type School = {
+  id: string;
+  name: string;
+  icon: string;
+  description: string | null;
+  courseCount: number;
+  completedCount: number; // for the current viewer, filled in by the caller if needed
+};
+
+export async function getSchools(employeeEmail?: string): Promise<School[]> {
+  if (!supabaseConfigured) return [];
+  try {
+    const supabase = createServiceClient();
+    const { data: schools, error } = await supabase.from("schools").select("*").order("sort_order");
+    if (error || !schools) return [];
+
+    const { data: courses } = await supabase.from("courses").select("id, school_id").not("school_id", "is", null);
+    const courseCountBySchool = new Map<string, number>();
+    for (const c of courses ?? []) {
+      courseCountBySchool.set(c.school_id, (courseCountBySchool.get(c.school_id) ?? 0) + 1);
+    }
+
+    let completedByCourse = new Map<string, boolean>();
+    if (employeeEmail) {
+      const { data: progress } = await supabase
+        .from("employee_course_progress")
+        .select("course_id, status")
+        .eq("employee_email", employeeEmail);
+      completedByCourse = new Map((progress ?? []).map((p) => [p.course_id, p.status === "Completed"]));
+    }
+    const completedCountBySchool = new Map<string, number>();
+    for (const c of courses ?? []) {
+      if (completedByCourse.get(c.id)) {
+        completedCountBySchool.set(c.school_id, (completedCountBySchool.get(c.school_id) ?? 0) + 1);
+      }
+    }
+
+    return schools.map((s) => ({
+      id: s.id,
+      name: s.name,
+      icon: s.icon,
+      description: s.description,
+      courseCount: courseCountBySchool.get(s.id) ?? 0,
+      completedCount: completedCountBySchool.get(s.id) ?? 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type CourseSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  duration: string | null;
+  lessonCount: number;
+  status: "Not Started" | "In Progress" | "Completed";
+};
+
+export async function getSchoolWithCourses(schoolId: string, employeeEmail?: string): Promise<{ school: School | null; courses: CourseSummary[] }> {
+  if (!supabaseConfigured) return { school: null, courses: [] };
+  try {
+    const supabase = createServiceClient();
+    const { data: school } = await supabase.from("schools").select("*").eq("id", schoolId).maybeSingle();
+    if (!school) return { school: null, courses: [] };
+
+    const { data: courses } = await supabase.from("courses").select("*").eq("school_id", schoolId).order("sort_order");
+    const courseIds = (courses ?? []).map((c) => c.id);
+
+    const { data: lessonCounts } = await supabase.from("lessons").select("course_id").in("course_id", courseIds.length ? courseIds : ["00000000-0000-0000-0000-000000000000"]);
+    const lessonCountByCourse = new Map<string, number>();
+    for (const l of lessonCounts ?? []) {
+      lessonCountByCourse.set(l.course_id, (lessonCountByCourse.get(l.course_id) ?? 0) + 1);
+    }
+
+    let statusByCourse = new Map<string, CourseSummary["status"]>();
+    if (employeeEmail && courseIds.length) {
+      const { data: progress } = await supabase
+        .from("employee_course_progress")
+        .select("course_id, status")
+        .eq("employee_email", employeeEmail)
+        .in("course_id", courseIds);
+      statusByCourse = new Map((progress ?? []).map((p) => [p.course_id, p.status as CourseSummary["status"]]));
+    }
+
+    return {
+      school: {
+        id: school.id, name: school.name, icon: school.icon, description: school.description,
+        courseCount: courses?.length ?? 0, completedCount: 0,
+      },
+      courses: (courses ?? []).map((c) => ({
+        id: c.id,
+        title: c.title,
+        description: c.description,
+        duration: c.duration,
+        lessonCount: lessonCountByCourse.get(c.id) ?? 0,
+        status: statusByCourse.get(c.id) ?? "Not Started",
+      })),
+    };
+  } catch {
+    return { school: null, courses: [] };
+  }
+}
+
+export type Lesson = {
+  id: string;
+  title: string;
+  content: string;
+  videoUrl: string | null;
+  durationMinutes: number;
+};
+
+export type QuizQuestionForPlayer = {
+  id: string;
+  question: string;
+  options: string[];
+  // correctOptionIndex is deliberately NOT included here — it's only used
+  // server-side when scoring a submission, never sent to the browser
+  // before the quiz is answered.
+};
+
+export type CourseDetail = {
+  id: string;
+  title: string;
+  description: string | null;
+  passMarkPct: number;
+  lessons: Lesson[];
+  quizQuestions: QuizQuestionForPlayer[];
+  progress: {
+    status: "Not Started" | "In Progress" | "Completed";
+    completedLessonIds: string[];
+    quizScorePct: number | null;
+    quizPassed: boolean | null;
+  };
+};
+
+export async function getCourseDetail(courseId: string, employeeEmail: string): Promise<CourseDetail | null> {
+  if (!supabaseConfigured) return null;
+  try {
+    const supabase = createServiceClient();
+    const { data: course, error } = await supabase.from("courses").select("*").eq("id", courseId).maybeSingle();
+    if (error || !course) return null;
+
+    const [{ data: lessons }, { data: questions }, { data: progress }] = await Promise.all([
+      supabase.from("lessons").select("*").eq("course_id", courseId).order("sort_order"),
+      supabase.from("quiz_questions").select("id, question, options").eq("course_id", courseId).order("sort_order"),
+      supabase.from("employee_course_progress").select("*").eq("course_id", courseId).eq("employee_email", employeeEmail).maybeSingle(),
+    ]);
+
+    return {
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      passMarkPct: course.pass_mark_pct ?? 70,
+      lessons: (lessons ?? []).map((l) => ({
+        id: l.id, title: l.title, content: l.content, videoUrl: l.video_url, durationMinutes: l.duration_minutes,
+      })),
+      quizQuestions: (questions ?? []).map((q) => ({ id: q.id, question: q.question, options: q.options as string[] })),
+      progress: {
+        status: (progress?.status as CourseDetail["progress"]["status"]) ?? "Not Started",
+        completedLessonIds: (progress?.completed_lesson_ids as string[]) ?? [],
+        quizScorePct: progress?.quiz_score_pct ?? null,
+        quizPassed: progress?.quiz_passed ?? null,
+      },
+    };
+  } catch {
+    return null;
+  }
+}

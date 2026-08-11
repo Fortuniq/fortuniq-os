@@ -1,101 +1,67 @@
 "use client";
 
-import { PlayCircle, Award, Route, ClipboardCheck, BarChart2 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
-import { StatCard } from "@/components/ui/StatCard";
+import Link from "next/link";
+import { GraduationCap, ChevronRight } from "lucide-react";
+import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
+import type { School } from "@/lib/data";
 
-type Course = {
-  id: string | number;
-  title: string;
-  category: string;
-  modules: number;
-  duration: string;
-  enrolled: number;
-  completion: number;
-};
-type LearningPath = { id: string | number; title: string; courses: number; forRole: string };
-
-export function AcademyView({ courses, learningPaths }: { courses: Course[]; learningPaths: LearningPath[] }) {
-  const avgCompletion = Math.round(courses.reduce((s, c) => s + c.completion, 0) / courses.length);
+export function AcademyView({ schools }: { schools: School[] }) {
+  const totalCourses = schools.reduce((s, sc) => s + sc.courseCount, 0);
+  const totalCompleted = schools.reduce((s, sc) => s + sc.completedCount, 0);
 
   return (
     <div>
-      <PageHeader title="FortunIQ Academy" description="Training, onboarding and certification for every role." />
+      <PageHeader
+        title="FortunIQ Academy"
+        description="Learn at your own pace — courses, video lessons, and assessments across five schools."
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Courses" value={String(courses.length)} icon={PlayCircle} />
-        <StatCard label="Learning Paths" value={String(learningPaths.length)} icon={Route} />
-        <StatCard label="Avg. Completion" value={`${avgCompletion}%`} icon={BarChart2} />
-        <StatCard label="Certificates Issued" value="24" sub="This year" icon={Award} />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <StatCard label="Schools" value={String(schools.length)} icon={GraduationCap} />
+        <StatCard label="Total Courses" value={String(totalCourses)} icon={GraduationCap} />
+        <StatCard label="Your Completions" value={String(totalCompleted)} sub={`of ${totalCourses} available`} icon={GraduationCap} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Courses</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-3">
-            {courses.map((c) => (
-              <div key={c.id} className="flex items-center gap-4 py-2 border-b border-border last:border-0">
-                <div className="w-10 h-10 rounded-lg bg-orange/10 flex items-center justify-center shrink-0">
-                  <PlayCircle className="w-5 h-5 text-orange" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-navy">{c.title}</p>
-                  <p className="text-xs text-light-grey">
-                    {c.category} · {c.modules} modules · {c.duration} · {c.enrolled} enrolled
-                  </p>
-                </div>
-                <div className="w-28 shrink-0">
-                  <div className="flex justify-between text-[10px] text-light-grey mb-1">
-                    <span>{c.completion}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-border overflow-hidden">
-                    <div className="h-full bg-orange rounded-full" style={{ width: `${c.completion}%` }} />
-                  </div>
-                </div>
-              </div>
-            ))}
+      {schools.length === 0 ? (
+        <Card>
+          <CardBody className="text-center py-12">
+            <p className="text-sm text-grey">
+              No schools set up yet — run <code className="bg-surface px-1.5 py-0.5 rounded text-xs">migration_v9_academy_schools.sql</code> to get started.
+            </p>
           </CardBody>
         </Card>
-
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Learning Paths</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-3">
-              {learningPaths.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 py-1.5">
-                  <Route className="w-4 h-4 text-orange shrink-0" />
-                  <div>
-                    <p className="text-sm text-navy font-medium">{p.title}</p>
-                    <p className="text-xs text-light-grey">{p.courses} courses · {p.forRole}</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {schools.map((school) => (
+            <Link key={school.id} href={`/academy/${school.id}`}>
+              <Card className="p-5 hover:border-orange transition-colors cursor-pointer h-full flex flex-col">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-12 h-12 rounded-xl bg-navy flex items-center justify-center text-2xl shrink-0">
+                    {school.icon}
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-light-grey" />
+                </div>
+                <h3 className="font-display font-bold text-navy text-base mb-1">{school.name}</h3>
+                <p className="text-xs text-grey flex-1">{school.description}</p>
+                <div className="mt-4 pt-3 border-t border-border">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-light-grey">{school.courseCount} courses</span>
+                    <span className="font-semibold text-navy">{school.completedCount}/{school.courseCount} complete</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-border overflow-hidden">
+                    <div
+                      className="h-full bg-orange rounded-full transition-all"
+                      style={{ width: `${school.courseCount ? (school.completedCount / school.courseCount) * 100 : 0}%` }}
+                    />
                   </div>
                 </div>
-              ))}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Manager Dashboard</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-navy">
-                <ClipboardCheck className="w-4 h-4 text-orange" /> 3 assessments awaiting review
-              </div>
-              <div className="flex items-center gap-2 text-sm text-navy">
-                <Award className="w-4 h-4 text-orange" /> 2 certificates ready to issue
-              </div>
-              <p className="text-xs text-light-grey pt-1">
-                Managers can track department-wide training progress and assign courses directly from here.
-              </p>
-            </CardBody>
-          </Card>
+              </Card>
+            </Link>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }

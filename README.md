@@ -1,15 +1,47 @@
-# FortunIQ OS — v9 Build — Employee Hub (Phase 1) & FortunIQ Intelligence
+# FortunIQ OS — v10 Build — Academy Schools (Skillsoft-style)
 
-The complete internal operating system for FortunIQ Fuels — now with the
-start of a real **Employee Lifecycle Management system**: a searchable
-Employee Directory, a full digital personnel file per employee, and
-genuinely server-enforced protection on banking and tax data. The AI
-Assistant is now branded **FortunIQ Intelligence** throughout. Backed by
-**138 automated tests**.
+The complete internal operating system for FortunIQ Fuels — now with
+**FortunIQ Academy rebuilt as five Skillsoft-style Schools**, each with
+video-ready courses, real lessons, and genuine multiple-choice
+assessments that are scored securely server-side. School of Corporate
+Excellence is fully populated with real content; the other four schools
+are structurally ready and will be populated next. Backed by
+**145 automated tests**.
 
 Built with **React, Next.js (App Router), TypeScript, Tailwind CSS,
 Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude
 (as FortunIQ Intelligence), and Vitest for automated testing.**
+
+## What's new in this build
+
+- **Five Schools**: Corporate Excellence, Compliance & Governance,
+  Petroleum Operations, Business Excellence, and Leadership — a proper
+  faculty structure, not a flat course list.
+- **School of Corporate Excellence, fully built**: 3 courses (Values,
+  Code of Conduct, Workplace Behaviour), 9 real lessons drawing directly
+  on your actual Brand Manual and Employee Handbook content, and 15
+  genuine assessment questions.
+- **A real, video-ready course player** — every lesson has a proper
+  video area that plays a real video automatically the moment one's
+  added (just paste a URL), and displays clean, substantive written
+  content in the meantime, not a placeholder.
+- **Real, secure quiz scoring** — correct answers are never sent to the
+  browser before submission; scoring happens entirely server-side.
+- **Passing a course creates a real certification** on that person's
+  Employee Hub profile automatically — Academy completion now genuinely
+  connects to the personnel file.
+- **7 new automated tests** (145 total) covering the scoring logic.
+- **One honest limitation**: no actual video content exists — I can't
+  produce video files. The system is built video-ready for whenever real
+  video is available. See `docs/ACADEMY_SCHOOLS.md`.
+
+## Previous build (v9): Employee Hub (Phase 1) & FortunIQ Intelligence
+
+- A searchable Employee Directory and full digital personnel file per
+  employee, with genuinely server-enforced protection on banking and tax
+  data (verified, not just claimed — see `docs/EMPLOYEE_HUB.md`).
+- The AI Assistant renamed to **FortunIQ Intelligence** throughout.
+- 11 automated tests covering restricted-field access.
 
 ## What's new in this build
 
