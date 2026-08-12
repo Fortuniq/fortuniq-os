@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getEmployeeProfile } from "@/lib/data";
+import { getEmployeeProfile, getEmployeeDirectory } from "@/lib/data";
 import { requireModuleAccess } from "@/lib/permissions";
 import { canViewRestrictedEmployeeField } from "@/lib/employee-hub-core";
 import { EmployeeProfileView } from "./employee-profile-view";
@@ -7,7 +7,7 @@ import { EmployeeProfileView } from "./employee-profile-view";
 export default async function EmployeeProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const permissions = await requireModuleAccess("people");
   const { id } = await params;
-  const profile = await getEmployeeProfile(id);
+  const [profile, directory] = await Promise.all([getEmployeeProfile(id), getEmployeeDirectory()]);
 
   if (!profile) notFound();
 
@@ -30,6 +30,8 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
       profile={safeProfile}
       canViewRestricted={canViewBanking || canViewTax}
       isOwnProfile={!!permissions.email && permissions.email.toLowerCase() === (profile.email ?? "").toLowerCase()}
+      isAdmin={permissions.isAdmin}
+      managers={directory.map((e) => ({ id: e.id, name: e.name }))}
     />
   );
 }

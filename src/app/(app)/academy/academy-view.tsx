@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { GraduationCap, ChevronRight } from "lucide-react";
+import { GraduationCap, ChevronRight, Settings2 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import type { School } from "@/lib/data";
 
-export function AcademyView({ schools }: { schools: School[] }) {
+export function AcademyView({ schools, isAdmin }: { schools: School[]; isAdmin: boolean }) {
   const totalCourses = schools.reduce((s, sc) => s + sc.courseCount, 0);
   const totalCompleted = schools.reduce((s, sc) => s + sc.completedCount, 0);
 
@@ -16,6 +16,11 @@ export function AcademyView({ schools }: { schools: School[] }) {
       <PageHeader
         title="FortunIQ Academy"
         description="Learn at your own pace — courses, video lessons, and assessments across five schools."
+        action={isAdmin ? (
+          <Link href="/academy/admin" className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-2 rounded-lg hover:bg-orange transition-colors">
+            <Settings2 className="w-3.5 h-3.5" /> Manage Content
+          </Link>
+        ) : undefined}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

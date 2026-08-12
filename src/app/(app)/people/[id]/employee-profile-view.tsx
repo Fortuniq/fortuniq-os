@@ -1,14 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, MapPin, Briefcase, Users2, Calendar, Shield, Phone, Mail,
-  Lock, Award, Laptop, TrendingUp, Sparkles, CheckCircle2, XCircle,
+  Lock, Award, Laptop, TrendingUp, Sparkles, CheckCircle2, XCircle, Pencil, Plus,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/format";
 import type { EmployeeProfile } from "@/lib/data";
+import { EmployeeFormModal } from "../EmployeeFormModal";
+import { addEquipment, addCertification } from "../employee-actions";
 
 function initials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -42,11 +45,19 @@ export function EmployeeProfileView({
   profile,
   canViewRestricted,
   isOwnProfile,
+  isAdmin,
+  managers,
 }: {
   profile: EmployeeProfile;
   canViewRestricted: boolean;
   isOwnProfile: boolean;
+  isAdmin: boolean;
+  managers: { id: string; name: string }[];
 }) {
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [showAddEquipment, setShowAddEquipment] = useState(false);
+  const [showAddCert, setShowAddCert] = useState(false);
+
   return (
     <div>
       <Link href="/people" className="flex items-center gap-1.5 text-sm text-grey hover:text-navy transition-colors mb-4">
@@ -82,6 +93,14 @@ export function EmployeeProfileView({
               )}
             </div>
           </div>
+          {isAdmin && (
+            <button
+              onClick={() => setShowEditForm(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-navy bg-surface px-3 py-2 rounded-lg hover:bg-orange hover:text-white transition-colors shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+          )}
         </div>
       </Card>
 
@@ -127,8 +146,30 @@ export function EmployeeProfileView({
 
         {/* Skills */}
         <Card>
-          <CardHeader><CardTitle><span className="flex items-center gap-1.5"><Award className="w-3.5 h-3.5 text-orange" /> Skills & Certifications</span></CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between w-full">
+              <CardTitle><span className="flex items-center gap-1.5"><Award className="w-3.5 h-3.5 text-orange" /> Skills & Certifications</span></CardTitle>
+              {isAdmin && (
+                <button onClick={() => setShowAddCert((s) => !s)} className="text-grey hover:text-orange transition-colors">
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </CardHeader>
           <CardBody>
+            {showAddCert && (
+              <form
+                action={async (fd) => { await addCertification(profile.id, fd); setShowAddCert(false); }}
+                className="bg-surface rounded-lg p-3 mb-3 space-y-2"
+              >
+                <input name="name" placeholder="Certification name" required className="w-full text-sm px-3 py-1.5 rounded-lg border border-border" />
+                <div className="flex gap-2">
+                  <input name="issuedDate" type="date" className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-border" placeholder="Issued" />
+                  <input name="expiryDate" type="date" className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-border" placeholder="Expires" />
+                </div>
+                <button type="submit" className="text-xs font-semibold text-white bg-navy px-3 py-1.5 rounded-lg hover:bg-orange transition-colors">Add</button>
+              </form>
+            )}
             {profile.skills.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {profile.skills.map((s) => (
@@ -153,8 +194,30 @@ export function EmployeeProfileView({
 
         {/* Equipment */}
         <Card>
-          <CardHeader><CardTitle><span className="flex items-center gap-1.5"><Laptop className="w-3.5 h-3.5 text-orange" /> Equipment Issued</span></CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between w-full">
+              <CardTitle><span className="flex items-center gap-1.5"><Laptop className="w-3.5 h-3.5 text-orange" /> Equipment Issued</span></CardTitle>
+              {isAdmin && (
+                <button onClick={() => setShowAddEquipment((s) => !s)} className="text-grey hover:text-orange transition-colors">
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </CardHeader>
           <CardBody>
+            {showAddEquipment && (
+              <form
+                action={async (fd) => { await addEquipment(profile.id, fd); setShowAddEquipment(false); }}
+                className="bg-surface rounded-lg p-3 mb-3 space-y-2"
+              >
+                <input name="item" placeholder="Item (e.g. Laptop — Dell Latitude)" required className="w-full text-sm px-3 py-1.5 rounded-lg border border-border" />
+                <div className="flex gap-2">
+                  <input name="serialNumber" placeholder="Serial number" className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-border" />
+                  <input name="issuedDate" type="date" className="text-sm px-3 py-1.5 rounded-lg border border-border" />
+                </div>
+                <button type="submit" className="text-xs font-semibold text-white bg-navy px-3 py-1.5 rounded-lg hover:bg-orange transition-colors">Add</button>
+              </form>
+            )}
             {profile.equipment.length > 0 ? (
               profile.equipment.map((eq) => (
                 <div key={eq.id} className="flex items-center justify-between py-2 border-b border-border last:border-0 text-sm">
@@ -208,6 +271,10 @@ export function EmployeeProfileView({
         This profile is this employee&apos;s digital personnel file. Document Centre (contracts, ID documents,
         performance reviews, and more) is coming in the next phase of the Employee Hub — see docs/EMPLOYEE_HUB.md.
       </p>
+
+      {showEditForm && (
+        <EmployeeFormModal employee={profile} managers={managers} onClose={() => setShowEditForm(false)} />
+      )}
     </div>
   );
 }

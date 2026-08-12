@@ -3,7 +3,7 @@ import { requireModuleAccess } from "@/lib/permissions";
 import { PeopleView } from "./people-view";
 
 export default async function PeoplePage() {
-  await requireModuleAccess("people");
+  const permissions = await requireModuleAccess("people");
   const employees = await getEmployeeDirectory();
-  return <PeopleView employees={employees} />;
+  return <PeopleView employees={employees} isAdmin={permissions.isAdmin} />;
 }

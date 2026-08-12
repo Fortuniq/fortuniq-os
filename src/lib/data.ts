@@ -249,7 +249,7 @@ export async function getTenders() {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("tenders").select("*").order("closing_date");
     if (error || !data || data.length === 0) return mock.tenders;
-    return data.map((t, i) => ({ id: i + 1, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage, value: Number(t.value), compliance: t.compliance }));
+    return data.map((t) => ({ id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage, value: Number(t.value), compliance: t.compliance }));
   } catch {
     return mock.tenders;
   }
@@ -601,5 +601,52 @@ export async function getCourseDetail(courseId: string, employeeEmail: string): 
     };
   } catch {
     return null;
+  }
+}
+
+// ---------- ACADEMY ADMIN ----------
+export type AdminSchool = { id: string; name: string; icon: string; description: string | null; sortOrder: number };
+export type AdminCourse = { id: string; title: string; schoolId: string; schoolName: string; description: string | null; duration: string | null; passMarkPct: number };
+
+export async function getAcademyAdminData(): Promise<{ schools: AdminSchool[]; courses: AdminCourse[] }> {
+  if (!supabaseConfigured) return { schools: [], courses: [] };
+  try {
+    const supabase = createServiceClient();
+    const [{ data: schools }, { data: courses }] = await Promise.all([
+      supabase.from("schools").select("*").order("sort_order"),
+      supabase.from("courses").select("*").not("school_id", "is", null).order("sort_order"),
+    ]);
+    const schoolById = new Map((schools ?? []).map((s) => [s.id, s.name]));
+    return {
+      schools: (schools ?? []).map((s) => ({ id: s.id, name: s.name, icon: s.icon, description: s.description, sortOrder: s.sort_order })),
+      courses: (courses ?? []).map((c) => ({
+        id: c.id, title: c.title, schoolId: c.school_id, schoolName: schoolById.get(c.school_id) ?? "—",
+        description: c.description, duration: c.duration, passMarkPct: c.pass_mark_pct ?? 70,
+      })),
+    };
+  } catch {
+    return { schools: [], courses: [] };
+  }
+}
+
+export type AdminLesson = { id: string; title: string; content: string; videoUrl: string | null; durationMinutes: number };
+export type AdminQuizQuestion = { id: string; question: string; options: string[]; correctOptionIndex: number; explanation: string | null };
+
+export async function getCourseAdminContent(courseId: string): Promise<{ lessons: AdminLesson[]; quizQuestions: AdminQuizQuestion[] }> {
+  if (!supabaseConfigured) return { lessons: [], quizQuestions: [] };
+  try {
+    const supabase = createServiceClient();
+    const [{ data: lessons }, { data: questions }] = await Promise.all([
+      supabase.from("lessons").select("*").eq("course_id", courseId).order("sort_order"),
+      supabase.from("quiz_questions").select("*").eq("course_id", courseId).order("sort_order"),
+    ]);
+    return {
+      lessons: (lessons ?? []).map((l) => ({ id: l.id, title: l.title, content: l.content, videoUrl: l.video_url, durationMinutes: l.duration_minutes })),
+      quizQuestions: (questions ?? []).map((q) => ({
+        id: q.id, question: q.question, options: q.options as string[], correctOptionIndex: q.correct_option_index, explanation: q.explanation,
+      })),
+    };
+  } catch {
+    return { lessons: [], quizQuestions: [] };
   }
 }

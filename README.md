@@ -1,26 +1,56 @@
-# FortunIQ OS — v10 Build — Academy Schools (Skillsoft-style)
+# FortunIQ OS — v12 Build — Employee Hub & Tenders Add/Edit
 
-The complete internal operating system for FortunIQ Fuels — now with
-**FortunIQ Academy rebuilt as five Skillsoft-style Schools**, each with
-video-ready courses, real lessons, and genuine multiple-choice
-assessments that are scored securely server-side. School of Corporate
-Excellence is fully populated with real content; the other four schools
-are structurally ready and will be populated next. Backed by
-**145 automated tests**.
-
-Built with **React, Next.js (App Router), TypeScript, Tailwind CSS,
-Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude
-(as FortunIQ Intelligence), and Vitest for automated testing.**
+The complete internal operating system for FortunIQ Fuels — genuine
+**Add/Edit forms for Employee Hub and Tenders**, matching the pattern
+already established for Academy, Documents, and Team Management. Still
+backed by **145 automated tests**.
 
 ## What's new in this build
+
+- **Add Employee / Edit Employee**, Super Admin only: every field from
+  the original brief — basic info, employment details, contact,
+  emergency contact, next of kin, restricted financial fields (banking,
+  tax number), skills, and performance rating — in one comprehensive
+  form, on both the Directory ("Add Employee") and each Profile page
+  ("Edit").
+- **Add/edit equipment and certifications** directly from an employee's
+  profile — no more Supabase needed for these either.
+- **Employees are never permanently deleted** — "Archive" sets their
+  status accordingly, consistent with the offboarding principle from the
+  original brief.
+- **Add/Edit/Delete Tenders**, available to anyone with Tenders module
+  access (Super Admin and Management by default) — matching the same
+  access level the rest of the Tenders module already has.
+- **A real bug found and fixed**: `getTenders()` was returning a fake,
+  index-based ID instead of each tender's real database ID — editing
+  would have silently updated the wrong record. Fixed and verified.
+- **Employee numbers are now assigned by the database itself**
+  automatically on every new employee record, removing any risk of two
+  people accidentally getting the same number.
+
+## Previous build (v11): Academy Content Expansion & Admin UI
+
+School of Corporate Excellence and School of Compliance & Governance
+fully built with real content, plus an in-app Add/Edit screen for
+managing Academy Schools, Courses, Lessons, and Assessments.
+
+- **7 more real courses**, 19 more lessons, 32 more assessment questions
+  — School of Corporate Excellence is now fully complete (5/5 courses),
+  and School of Compliance & Governance is fully complete (5/5 courses).
+- **A real Academy admin screen** at Academy → Manage Content (Super
+  Admin only): add/edit Schools, add/edit/delete Courses, and — expanding
+  any course — add/edit/delete its Lessons and Assessment Questions,
+  right from the app. See the "Add School" / "Add Course" forms and the
+  expandable per-course lesson/question editor.
+- **Two schools remaining**: Petroleum Operations and Business Excellence
+  and Leadership — structurally ready, content not yet written. Continuing
+  next.
+
+## Previous build (v10): Academy Schools (Skillsoft-style)
 
 - **Five Schools**: Corporate Excellence, Compliance & Governance,
   Petroleum Operations, Business Excellence, and Leadership — a proper
   faculty structure, not a flat course list.
-- **School of Corporate Excellence, fully built**: 3 courses (Values,
-  Code of Conduct, Workplace Behaviour), 9 real lessons drawing directly
-  on your actual Brand Manual and Employee Handbook content, and 15
-  genuine assessment questions.
 - **A real, video-ready course player** — every lesson has a proper
   video area that plays a real video automatically the moment one's
   added (just paste a URL), and displays clean, substantive written
@@ -28,22 +58,9 @@ Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude
 - **Real, secure quiz scoring** — correct answers are never sent to the
   browser before submission; scoring happens entirely server-side.
 - **Passing a course creates a real certification** on that person's
-  Employee Hub profile automatically — Academy completion now genuinely
-  connects to the personnel file.
-- **7 new automated tests** (145 total) covering the scoring logic.
-- **One honest limitation**: no actual video content exists — I can't
-  produce video files. The system is built video-ready for whenever real
-  video is available. See `docs/ACADEMY_SCHOOLS.md`.
+  Employee Hub profile automatically. See `docs/ACADEMY_SCHOOLS.md`.
 
 ## Previous build (v9): Employee Hub (Phase 1) & FortunIQ Intelligence
-
-- A searchable Employee Directory and full digital personnel file per
-  employee, with genuinely server-enforced protection on banking and tax
-  data (verified, not just claimed — see `docs/EMPLOYEE_HUB.md`).
-- The AI Assistant renamed to **FortunIQ Intelligence** throughout.
-- 11 automated tests covering restricted-field access.
-
-## What's new in this build
 
 - **Employee Hub** replaces the old simple People list — a searchable,
   card-based directory, and a full profile per employee at `/people/[id]`
@@ -55,16 +72,8 @@ Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude
   unauthorised person's browser never receives the actual values at all.
   Visible only to the employee themselves, HR/Admin, Finance, and Super
   Admin. See `docs/EMPLOYEE_HUB.md`.
-- **11 new automated tests** (138 total) covering the restricted-field
-  rule against every role.
 - **The AI Assistant is now "FortunIQ Intelligence"** throughout the app,
   matching your brand.
-- **A clear, honest roadmap** for the rest of the Employee Lifecycle
-  Management system — Onboarding/Offboarding, Attendance, Leave,
-  Performance, Payroll, Expenses, Benefits, Compliance Dashboard,
-  Self-Service, and Manager Portal are all genuinely separate systems,
-  not built yet — see `docs/EMPLOYEE_HUB.md` for exactly what's involved
-  in each and a sensible build order.
 
 ## Previous build (v8): AI Security & Information Classification
 
@@ -117,7 +126,7 @@ Supabase, Microsoft Login (Entra ID), Microsoft Graph API, Claude
 ## Setup, in order
 
 1. **Database** — `supabase/SETUP.md` (first time) or the individual
-   `migration_v2...` through `migration_v8...` files if adding to an
+   `migration_v2...` through `migration_v11...` files if adding to an
    existing setup, in numeric order
 2. **Microsoft Login** — `docs/MICROSOFT_LOGIN_SETUP.md`
 3. **Admin & Permissions** — `docs/PERMISSIONS_SETUP.md`, then
@@ -190,13 +199,17 @@ entirely, only reduce how often you need to redo it.
   permissions** — see `docs/AI_SECURITY.md`. This isn't prompt wording;
   it's enforced in code before the model is ever called.
 - **Audit logging is real** for the actions that can currently happen
-  in-app (sign-ins, permission changes, document actions) — see
-  `docs/AUDIT_LOGS.md` for the honest gap around customer/employee record
-  changes, which needs Add/Edit forms to exist first.
-- **Not yet built**: in-app Add/Edit forms for People/Customers/etc.
-  (still uses Supabase's Table Editor directly), a live Power BI/Metabase
-  embed (Reports has its own built-in charts), and a general file upload
-  feature (SharePoint governs its own uploads for now).
+  in-app (sign-ins, permission changes, document actions, Academy content
+  changes, employee and tender edits) — see `docs/AUDIT_LOGS.md`.
+- **In-app Add/Edit now exists for**: Team Management, Documents
+  (classification/status), Academy (Schools/Courses/Lessons/Questions),
+  **Employee Hub** (full profile, equipment, certifications), and
+  **Tenders**. See `docs/ADD_EDIT_COVERAGE.md` for exactly which pages
+  have this and which still need Supabase's Table Editor directly.
+- **Not yet built**: Add/Edit for Finance, Operations, Customers, and
+  Sales (still uses Supabase's Table Editor directly), a live Power
+  BI/Metabase embed (Reports has its own built-in charts), and a general
+  file upload feature (SharePoint governs its own uploads for now).
 
 ## Project structure
 

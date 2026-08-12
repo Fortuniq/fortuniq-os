@@ -22,20 +22,24 @@ when, and — where relevant — what changed (e.g. old role → new role).
 
 ## What is honestly NOT recorded yet, and why
 
-You asked for audit logging on **customer changes** and **employee record
-changes** specifically. These are not yet logged — and the reason is
-important: **there is currently no way to create or edit a customer or
-employee record from inside FortunIQ OS at all.** Today, editing that data
-means using Supabase's Table Editor directly, which happens completely
-outside the app and can't be intercepted or logged by it.
+You originally asked for audit logging on **customer changes** and
+**employee record changes** specifically. **Employee record changes are
+now logged** — adding, editing, or archiving an employee, and adding
+equipment or certifications, all go through the real Add/Edit forms
+described in `docs/EMPLOYEE_HUB.md` and `docs/ADD_EDIT_COVERAGE.md`, and
+each one calls `logAudit()` the same way Team Management and Documents do.
 
-This isn't a gap in the logging — it's a gap in the underlying features.
-Real, meaningful audit logging for "who changed a customer" or "who
-changed an employee record" can only exist once genuine in-app Add/Edit
-forms exist for People and Customers (a feature we've discussed building
-next, separate from this request). The moment those forms exist, adding
-audit logging to them is a small addition, following the exact same
-pattern already used for documents and team management above.
+**Customer changes are still not logged**, for the same reason employee
+changes weren't until recently: **there is currently no way to create or
+edit a customer record from inside FortunIQ OS at all.** Editing that
+data still means using Supabase's Table Editor directly, completely
+outside the app's reach.
+
+This remains a gap in the underlying feature, not the logging itself —
+the moment a real in-app Add/Edit form exists for Customers, adding audit
+logging to it is a small, mechanical addition, following the exact same
+pattern already used for Documents, Team Management, Academy, and now
+Employee Hub and Tenders.
 
 **In the meantime**, anyone with direct Supabase access (which should
 only ever be you, as the project owner, plus anyone you've explicitly

@@ -1,12 +1,15 @@
 "use client";
 
-import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive } from "lucide-react";
+import { useState } from "react";
+import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive, Plus, Pencil, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { formatDate, formatZARCompact } from "@/lib/format";
+import { TenderFormModal } from "./TenderFormModal";
+import { deleteTender } from "./tender-actions";
 
 type Tender = {
   id: string | number;
@@ -21,45 +24,68 @@ type Tender = {
 
 type ChecklistItem = { item: string; done: boolean };
 
-const columns: Column<Tender>[] = [
-  {
-    key: "title",
-    header: "Tender",
-    render: (r) => (
-      <div>
-        <p className="font-medium text-navy">{r.title}</p>
-        <p className="text-xs text-light-grey">{r.ref}</p>
-      </div>
-    ),
-  },
-  { key: "closing", header: "Closing", render: (r) => formatDate(r.closing) },
-  { key: "status", header: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
-  { key: "stage", header: "Stage" },
-  { key: "value", header: "Value", align: "right", render: (r) => formatZARCompact(r.value) },
-  {
-    key: "compliance",
-    header: "Compliance",
-    render: (r) => (
-      <div className="flex items-center gap-2 w-28">
-        <div className="h-1.5 flex-1 rounded-full bg-border overflow-hidden">
-          <div
-            className={`h-full rounded-full ${r.compliance === 100 ? "bg-emerald-500" : r.compliance >= 80 ? "bg-orange" : "bg-amber-400"}`}
-            style={{ width: `${r.compliance}%` }}
-          />
-        </div>
-        <span className="text-xs text-grey w-8">{r.compliance}%</span>
-      </div>
-    ),
-  },
-];
+export function TendersView({ tenders, checklist, canManage }: { tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean }) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingTender, setEditingTender] = useState<Tender | null>(null);
 
-export function TendersView({ tenders, checklist }: { tenders: Tender[]; checklist: ChecklistItem[] }) {
   const open = tenders.filter((t) => t.status === "Open");
   const won = tenders.filter((t) => t.stage === "Closed — Won").length;
 
+  const columns: Column<Tender>[] = [
+    {
+      key: "title",
+      header: "Tender",
+      render: (r) => (
+        <div>
+          <p className="font-medium text-navy">{r.title}</p>
+          <p className="text-xs text-light-grey">{r.ref}</p>
+        </div>
+      ),
+    },
+    { key: "closing", header: "Closing", render: (r) => formatDate(r.closing) },
+    { key: "status", header: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
+    { key: "stage", header: "Stage" },
+    { key: "value", header: "Value", align: "right", render: (r) => formatZARCompact(r.value) },
+    {
+      key: "compliance",
+      header: "Compliance",
+      render: (r) => (
+        <div className="flex items-center gap-2 w-28">
+          <div className="h-1.5 flex-1 rounded-full bg-border overflow-hidden">
+            <div
+              className={`h-full rounded-full ${r.compliance === 100 ? "bg-emerald-500" : r.compliance >= 80 ? "bg-orange" : "bg-amber-400"}`}
+              style={{ width: `${r.compliance}%` }}
+            />
+          </div>
+          <span className="text-xs text-grey w-8">{r.compliance}%</span>
+        </div>
+      ),
+    },
+    ...(canManage ? [{
+      key: "actions", header: "", align: "right" as const,
+      render: (r: Tender) => (
+        <div className="flex items-center gap-2 justify-end">
+          <button onClick={() => setEditingTender(r)} className="text-grey hover:text-navy transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+          <button
+            onClick={() => { if (confirm(`Delete "${r.title}"?`)) deleteTender(String(r.id)); }}
+            className="text-grey hover:text-red-600 transition-colors"
+          ><Trash2 className="w-3.5 h-3.5" /></button>
+        </div>
+      ),
+    }] : []),
+  ];
+
   return (
     <div>
-      <PageHeader title="Tenders" description="Register, compliance tracking, and AI-assisted review for every bid." />
+      <PageHeader
+        title="Tenders"
+        description="Register, compliance tracking, and AI-assisted review for every bid."
+        action={canManage ? (
+          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-2 rounded-lg hover:bg-orange transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Add Tender
+          </button>
+        ) : undefined}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Open Tenders" value={String(open.length)} icon={ClipboardList} />
@@ -129,6 +155,9 @@ export function TendersView({ tenders, checklist }: { tenders: Tender[]; checkli
           </Card>
         </div>
       </div>
+
+      {showAddForm && <TenderFormModal onClose={() => setShowAddForm(false)} />}
+      {editingTender && <TenderFormModal tender={editingTender} onClose={() => setEditingTender(null)} />}
     </div>
   );
 }

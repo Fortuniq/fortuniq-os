@@ -9,14 +9,25 @@ one real limitation worth understanding, and how to keep adding content.
 
 | School | Courses (per your brief) | Status |
 |---|---|---|
-| Corporate Excellence | Values, Code of Conduct, Workplace Behaviour | ✅ Fully built with real content |
-| Compliance & Governance | POPIA, Anti-Bribery & Corruption, Ethics, Confidentiality, Cybersecurity | Structure ready, content not yet written |
+| Corporate Excellence | Welcome to FortunIQ, Company Story, Values, Code of Conduct, Workplace Behaviour | ✅ Fully built — 5/5 courses |
+| Compliance & Governance | POPIA, Anti-Bribery & Corruption, Ethics, Confidentiality, Cybersecurity | ✅ Fully built — 5/5 courses |
 | Petroleum Operations | Industry basics, Diesel/Petrol/LPG/Jet Fuel, Supply chain, Bills of Lading, Fuel quality, Safety | Structure ready, content not yet written |
 | Business Excellence | Customer service, Sales, Tender management, CRM, Communication, Time management | Structure ready, content not yet written |
 | Leadership | Coaching, Decision-making, Problem solving, Emotional intelligence, Management | Structure ready, content not yet written |
 
-("Welcome to FortunIQ" and "Company Story" were deliberately left out of
-Corporate Excellence, per your instruction.)
+## Managing content in-app (no more Supabase needed for this)
+
+Academy → **Manage Content** (visible only to Super Admin) now provides:
+
+- **Schools**: add a new school, edit an existing one's name/icon/description
+- **Courses**: add a new course (choose its school, set its pass mark), edit or delete an existing one
+- **Lessons and Assessment Questions**: click the arrow next to any course to expand it, then add, edit, or delete its lessons and quiz questions directly — including setting which option is correct
+
+This is real create/update/delete, not a preview — it writes directly to
+the same tables the live Academy reads from. The one thing intentionally
+*not* editable here is which employees have completed what — that's
+tracked automatically as people actually take courses, not something an
+admin sets manually.
 
 ## The one real limitation: no actual video
 
@@ -60,23 +71,12 @@ course's specific pass mark, unanswered questions counted as incorrect
 (not as errors), and the zero-questions edge case. Part of `npm test`
 (145 tests total across the whole app).
 
-## Adding content to the remaining four schools
+## Adding content to the remaining schools
 
-Every course follows the exact same three-part pattern used for Corporate
-Excellence — copy `supabase/migration_v9_seed_corporate_excellence.sql`
-as a template:
+**The easiest way now is directly in the app**: Academy → Manage Content
+→ Add Course (choosing Petroleum Operations, Business Excellence, or
+Leadership), then expand the new course to add its lessons and questions.
 
-1. **Insert the course**, linked to its school by name:
-   ```sql
-   insert into courses (title, category, school_id, description, sort_order, modules, duration, pass_mark_pct)
-   select 'Course Title', 'Category', id, 'Description', 1, 3, '15 min', 70
-   from schools where name = 'School of Compliance & Governance';
-   ```
-2. **Insert its lessons**, linked to the course by title (2-3 lessons per
-   course works well — long enough to be substantive, short enough that
-   people actually finish it).
-3. **Insert its quiz questions**, 5 per course, each with 4 options and
-   the correct index (0-3).
-
-I'm continuing with the remaining four schools' content next — this
-document will be updated as each is completed.
+**If you'd rather I write the content** (recommended for these three,
+since they benefit from real subject-matter research and consistent
+tone) — just ask, the same way you did for the first two schools.
