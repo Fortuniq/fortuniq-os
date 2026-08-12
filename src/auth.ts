@@ -32,7 +32,14 @@ type JWTWithGraphToken = {
 
 async function refreshAccessToken(token: JWTWithGraphToken): Promise<JWTWithGraphToken> {
   try {
-    const url = `${process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER}/oauth2/v2.0/token`;
+    // AUTH_MICROSOFT_ENTRA_ID_ISSUER already ends in "/v2.0" (e.g.
+    // https://login.microsoftonline.com/<tenant-id>/v2.0). The real
+    // token endpoint is "/oauth2/v2.0/token" appended to the tenant root
+    // — appending it directly onto the issuer as before produced a
+    // broken, duplicated ".../v2.0/oauth2/v2.0/token" URL that Microsoft
+    // correctly 404'd. Stripping the trailing "/v2.0" first fixes this.
+    const issuerRoot = (process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER ?? "").replace(/\/v2\.0\/?$/, "");
+    const url = `${issuerRoot}/oauth2/v2.0/token`;
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

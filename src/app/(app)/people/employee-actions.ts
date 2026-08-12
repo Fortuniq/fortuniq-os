@@ -69,6 +69,13 @@ export async function addEmployee(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("A name is required.");
 
+  // Email is deliberately required, not optional — it's how this person
+  // is matched to their Microsoft sign-in and to their System Access &
+  // Permissions record. Without it, that entire section on their profile
+  // has nothing to attach to and simply can't work.
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!email) throw new Error("An email address is required — it's how this person's sign-in and permissions get linked to their record.");
+
   // employee_number is deliberately NOT set here — the database assigns
   // it automatically (see the DEFAULT on the column, added in
   // migration_v11_employee_and_tender_actions.sql), so every employee,

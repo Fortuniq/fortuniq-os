@@ -93,7 +93,7 @@ export function EmployeeFormModal({
           </Section>
 
           <Section title="Contact">
-            <Field label="Email" name="email" type="email" defaultValue={employee?.email ?? ""} />
+            <Field label="Email (their Microsoft sign-in — required)" name="email" type="email" defaultValue={employee?.email ?? ""} required />
             <Field label="Phone" name="phone" defaultValue={employee?.phone ?? ""} />
           </Section>
 

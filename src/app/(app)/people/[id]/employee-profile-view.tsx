@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, MapPin, Briefcase, Users2, Calendar, Shield, Phone, Mail,
-  Lock, Award, Laptop, TrendingUp, Sparkles, CheckCircle2, XCircle, Pencil, Plus,
+  Lock, Award, Laptop, TrendingUp, Sparkles, CheckCircle2, XCircle, Pencil, Plus, ShieldCheck,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { Badge, statusTone } from "@/components/ui/Badge";
@@ -269,8 +269,24 @@ export function EmployeeProfileView({
           </CardBody>
         </Card>
 
-        {isSuperAdmin && profile.email && (
-          <SystemAccessPermissions employeeEmail={profile.email} employeeName={profile.preferredName || profile.name} />
+        {isSuperAdmin && (
+          profile.email ? (
+            <SystemAccessPermissions employeeEmail={profile.email} employeeName={profile.preferredName || profile.name} />
+          ) : (
+            <Card className="lg:col-span-3 border-amber-200 bg-amber-50">
+              <CardBody className="flex items-center gap-3 py-4">
+                <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">System Access & Permissions needs an email address</p>
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    {profile.name} doesn&apos;t have an email on file yet — permissions are matched to a person&apos;s
+                    Microsoft sign-in, so there&apos;s nothing to attach them to until one&apos;s added. Click
+                    <strong> Edit</strong> above and add their email address to unlock this section.
+                  </p>
+                </div>
+              </CardBody>
+            </Card>
+          )
         )}
       </div>
 
