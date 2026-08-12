@@ -2,11 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
-import { requireModuleAccess } from "@/lib/permissions";
+import { requirePermissionAction } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 
 export async function addTender(formData: FormData) {
-  const permissions = await requireModuleAccess("tenders");
+  // Real, backend-enforced RBAC — not just a hidden button. Someone with
+  // Tenders module access but no "Create" action granted (e.g. a Sales
+  // Representative who can only View tenders) is blocked here even if
+  // they somehow triggered this action directly, not just via the UI.
+  const permissions = await requirePermissionAction("tenders", "Create");
   const supabase = createServiceClient();
 
   const ref = String(formData.get("ref") ?? "").trim();
@@ -30,7 +34,7 @@ export async function addTender(formData: FormData) {
 }
 
 export async function updateTender(tenderId: string, formData: FormData) {
-  const permissions = await requireModuleAccess("tenders");
+  const permissions = await requirePermissionAction("tenders", "Edit");
   const supabase = createServiceClient();
 
   const { error } = await supabase.from("tenders").update({
@@ -50,7 +54,7 @@ export async function updateTender(tenderId: string, formData: FormData) {
 }
 
 export async function deleteTender(tenderId: string) {
-  const permissions = await requireModuleAccess("tenders");
+  const permissions = await requirePermissionAction("tenders", "Delete");
   const supabase = createServiceClient();
   await supabase.from("tender_checklist_items").delete().eq("tender_id", tenderId);
   await supabase.from("tenders").delete().eq("id", tenderId);

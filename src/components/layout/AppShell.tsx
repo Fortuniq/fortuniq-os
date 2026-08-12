@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import type { UserPermissions } from "@/lib/permissions";
+import type { EmployeePermissionSet } from "@/lib/rbac-core";
 
 type SessionUser = {
   name?: string | null;
@@ -16,14 +17,16 @@ export function AppShell({
   children,
   user,
   permissions,
+  permissionSet,
 }: {
   children: React.ReactNode;
   user?: SessionUser;
   permissions?: UserPermissions;
+  permissionSet?: EmployeePermissionSet;
 }) {
   return (
     <div className="flex min-h-screen bg-surface">
-      <Sidebar permissions={permissions} />
+      <Sidebar permissions={permissions} permissionSet={permissionSet} />
       <div className="flex-1 min-w-0">
         <TopBar user={user} />
         <main className="p-6 max-w-[1400px] mx-auto">{children}</main>

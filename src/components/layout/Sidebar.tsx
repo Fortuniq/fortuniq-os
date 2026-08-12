@@ -6,12 +6,25 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { NAV_ITEMS } from "@/lib/nav";
 import { hasModuleAccess, type UserPermissions } from "@/lib/permissions";
+import { canView, type EmployeePermissionSet } from "@/lib/rbac-core";
 
-export function Sidebar({ permissions }: { permissions?: UserPermissions }) {
+export function Sidebar({ permissions, permissionSet }: { permissions?: UserPermissions; permissionSet?: EmployeePermissionSet }) {
   const pathname = usePathname();
 
   const visibleItems = permissions
-    ? NAV_ITEMS.filter((item) => hasModuleAccess(permissions, item.key))
+    ? NAV_ITEMS.filter((item) => {
+        if (!hasModuleAccess(permissions, item.key)) return false;
+        // Granular check on top of the coarse one: if this specific
+        // person has ever had this specific module explicitly configured
+        // in System Access & Permissions, respect that (even to hide it,
+        // if View wasn't granted) — otherwise fall back to the coarse
+        // module-level result already computed above. See docs/RBAC.md.
+        if (permissions.isAdmin) return true;
+        if (permissionSet && item.key in permissionSet) {
+          return canView(permissionSet, item.key);
+        }
+        return true;
+      })
     : NAV_ITEMS;
 
   return (

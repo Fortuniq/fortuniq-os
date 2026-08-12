@@ -11,6 +11,7 @@ import { Badge, statusTone } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/format";
 import type { EmployeeProfile } from "@/lib/data";
 import { EmployeeFormModal } from "../EmployeeFormModal";
+import { SystemAccessPermissions } from "./SystemAccessPermissions";
 import { addEquipment, addCertification } from "../employee-actions";
 
 function initials(name: string) {
@@ -260,11 +261,15 @@ export function EmployeeProfileView({
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-grey" />
               <span className="text-sm text-grey">
-                Role and module access are managed in Settings → Team Management.
+                Overall role is managed in Settings → Team Management. Granular module permissions below.
               </span>
             </div>
           </CardBody>
         </Card>
+
+        {isAdmin && profile.email && (
+          <SystemAccessPermissions employeeEmail={profile.email} employeeName={profile.preferredName || profile.name} />
+        )}
       </div>
 
       <p className="text-[11px] text-light-grey mt-4">

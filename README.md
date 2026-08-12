@@ -1,32 +1,42 @@
-# FortunIQ OS — v12 Build — Employee Hub & Tenders Add/Edit
+# FortunIQ OS — v13 Build — Role-Based Access Control (RBAC)
 
-The complete internal operating system for FortunIQ Fuels — genuine
-**Add/Edit forms for Employee Hub and Tenders**, matching the pattern
-already established for Academy, Documents, and Team Management. Still
-backed by **145 automated tests**.
+The complete internal operating system for FortunIQ Fuels — a genuine,
+**enterprise-grade Role-Based Access Control system**: a granular
+View/Create/Edit/Delete/Approve/Export/Manage permission matrix per
+module, managed from a new **System Access & Permissions** section on
+every Employee Hub profile, with 10 reusable Role Templates and real
+backend enforcement — not just hidden menu items. Backed by
+**175 automated tests**.
 
 ## What's new in this build
 
-- **Add Employee / Edit Employee**, Super Admin only: every field from
-  the original brief — basic info, employment details, contact,
-  emergency contact, next of kin, restricted financial fields (banking,
-  tax number), skills, and performance rating — in one comprehensive
-  form, on both the Directory ("Add Employee") and each Profile page
-  ("Edit").
-- **Add/edit equipment and certifications** directly from an employee's
-  profile — no more Supabase needed for these either.
-- **Employees are never permanently deleted** — "Archive" sets their
-  status accordingly, consistent with the offboarding principle from the
-  original brief.
-- **Add/Edit/Delete Tenders**, available to anyone with Tenders module
-  access (Super Admin and Management by default) — matching the same
-  access level the rest of the Tenders module already has.
-- **A real bug found and fixed**: `getTenders()` was returning a fake,
-  index-based ID instead of each tender's real database ID — editing
-  would have silently updated the wrong record. Fixed and verified.
-- **Employee numbers are now assigned by the database itself**
-  automatically on every new employee record, removing any risk of two
-  people accidentally getting the same number.
+- **System Access & Permissions** on every employee profile: a full
+  13-module × 7-action permission matrix, editable directly, saving
+  immediately per checkbox.
+- **10 Role Templates** (CEO, Director, HR Manager, Finance Officer,
+  Sales Representative, Tender Administrator, Marketing, Operations,
+  Administrator, Intern) — four of them your own exact worked examples,
+  reproduced and verified by automated test.
+- **Real backend enforcement**, not cosmetic: Tenders Add/Edit/Delete now
+  check the specific granular action, not just module access — verified
+  end-to-end against your exact Tender Administrator example.
+- **Navigation automatically hides inaccessible modules**, per your
+  requirement — the sidebar respects granular View permission the same
+  backward-compatible way the enforcement does.
+- **A backward-compatible rollout design**: nobody's access changes the
+  moment this migration runs — granular rules only take effect once an
+  admin explicitly configures a specific person on a specific module.
+- **30 new automated tests** (175 total), including line-by-line
+  verification of all four of your worked examples.
+- **An honest scope note**: Tenders is the fully-wired reference
+  implementation; extending the same real enforcement pattern to Employee
+  Hub, Documents, Academy, Finance, and the rest is a natural, mechanical
+  next step — not yet done everywhere. See `docs/RBAC.md`.
+
+## Previous build (v12): Employee Hub & Tenders Add/Edit
+
+Add/Edit forms for Employee Hub and Tenders, matching the pattern already
+established for Academy, Documents, and Team Management.
 
 ## Previous build (v11): Academy Content Expansion & Admin UI
 
@@ -126,11 +136,12 @@ managing Academy Schools, Courses, Lessons, and Assessments.
 ## Setup, in order
 
 1. **Database** — `supabase/SETUP.md` (first time) or the individual
-   `migration_v2...` through `migration_v11...` files if adding to an
+   `migration_v2...` through `migration_v12...` files if adding to an
    existing setup, in numeric order
 2. **Microsoft Login** — `docs/MICROSOFT_LOGIN_SETUP.md`
 3. **Admin & Permissions** — `docs/PERMISSIONS_SETUP.md`, then
-   `docs/ROLES_AND_PERMISSIONS.md` for how the six roles work
+   `docs/ROLES_AND_PERMISSIONS.md` for how the six roles work, then
+   `docs/RBAC.md` for the granular per-module permission system
 4. **SharePoint** — `docs/SHAREPOINT_SETUP.md`
 5. **Security** — `docs/SECURITY.md` (includes MFA setup — do this one,
    it's quick and important)
@@ -177,12 +188,14 @@ npm test
 
 105 tests verify every role sees exactly the modules it should (see
 `docs/ROLES_AND_PERMISSIONS.md`), 22 verify document classification and
-AI access control (see `docs/AI_SECURITY.md`), and 11 verify restricted
+AI access control (see `docs/AI_SECURITY.md`), 11 verify restricted
 employee data access — banking and tax details (see
-`docs/EMPLOYEE_HUB.md`) — **138 in total**, running in well under a
-second. All three docs also include a "Manual verification checklist"
-for the parts that genuinely need a real, live account to confirm —
-automated tests can't replace that
+`docs/EMPLOYEE_HUB.md`), 7 verify Academy quiz scoring (see
+`docs/ACADEMY_SCHOOLS.md`), and 30 verify the granular RBAC system,
+including your exact worked examples (see `docs/RBAC.md`) — **175 in
+total**, running in well under two seconds. All docs also include a
+"Manual verification checklist" for the parts that genuinely need a
+real, live account to confirm — automated tests can't replace that
 entirely, only reduce how often you need to redo it.
 
 ## What's real vs. what's still a placeholder
@@ -270,6 +283,7 @@ docs/
   AI_ASSISTANT_SETUP.md           → step-by-step guide
   AI_SECURITY.md                   → the full AI security architecture, requirement-by-requirement
   EMPLOYEE_HUB.md                    → what Phase 1 built, restricted field security, and the full roadmap
+  RBAC.md                             → granular permissions, role templates, and the honest scope of real enforcement
 ```
 
 ## Brand system
