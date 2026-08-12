@@ -2,18 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
-import { getCurrentUserPermissions } from "@/lib/permissions";
+import { requirePermissionAction } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 
-// Managing what training content exists is restricted to Super Admin —
-// deciding what every employee is trained on, and what counts as a
-// passing score, isn't self-service for whoever has Academy access.
+// Real, granular RBAC enforcement — matching the pattern established for
+// Tenders and Employee Hub (see docs/RBAC.md). Requires "Manage" on the
+// Academy module specifically, not just Super Admin — the HR Manager
+// role template, for example, is deliberately granted Academy "Manage"
+// so HR can maintain training content without needing full Super Admin
+// rights across the whole system.
 async function assertCallerIsAdmin() {
-  const caller = await getCurrentUserPermissions();
-  if (caller.status !== "active" || !caller.isAdmin) {
-    throw new Error("Only a Super Admin can manage Academy content.");
-  }
-  return caller;
+  return requirePermissionAction("academy", "Manage");
 }
 
 // ---------- SCHOOLS ----------

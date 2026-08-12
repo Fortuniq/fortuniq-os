@@ -1,37 +1,38 @@
-# FortunIQ OS — v13 Build — Role-Based Access Control (RBAC)
+# FortunIQ OS — v14 Build — RBAC Enforcement Expanded
 
-The complete internal operating system for FortunIQ Fuels — a genuine,
-**enterprise-grade Role-Based Access Control system**: a granular
-View/Create/Edit/Delete/Approve/Export/Manage permission matrix per
-module, managed from a new **System Access & Permissions** section on
-every Employee Hub profile, with 10 reusable Role Templates and real
-backend enforcement — not just hidden menu items. Backed by
-**175 automated tests**.
+The complete internal operating system for FortunIQ Fuels — the granular
+Role-Based Access Control system now has **real, backend enforcement
+across four modules**: Tenders, Documents, Academy, and Employee Hub —
+not just Tenders alone. Still backed by **175 automated tests**.
 
 ## What's new in this build
 
-- **System Access & Permissions** on every employee profile: a full
-  13-module × 7-action permission matrix, editable directly, saving
-  immediately per checkbox.
-- **10 Role Templates** (CEO, Director, HR Manager, Finance Officer,
-  Sales Representative, Tender Administrator, Marketing, Operations,
-  Administrator, Intern) — four of them your own exact worked examples,
-  reproduced and verified by automated test.
-- **Real backend enforcement**, not cosmetic: Tenders Add/Edit/Delete now
-  check the specific granular action, not just module access — verified
-  end-to-end against your exact Tender Administrator example.
-- **Navigation automatically hides inaccessible modules**, per your
-  requirement — the sidebar respects granular View permission the same
-  backward-compatible way the enforcement does.
-- **A backward-compatible rollout design**: nobody's access changes the
-  moment this migration runs — granular rules only take effect once an
-  admin explicitly configures a specific person on a specific module.
-- **30 new automated tests** (175 total), including line-by-line
-  verification of all four of your worked examples.
-- **An honest scope note**: Tenders is the fully-wired reference
-  implementation; extending the same real enforcement pattern to Employee
-  Hub, Documents, Academy, Finance, and the rest is a natural, mechanical
-  next step — not yet done everywhere. See `docs/RBAC.md`.
+- **Documents, Academy, and Employee Hub now check specific granular
+  actions**, the same real, backend-enforced way Tenders already did —
+  not just module-level access.
+- **Employee Hub's restricted fields (banking, tax number) get their own,
+  separate layer of protection** even from someone who's been granted
+  general edit rights on People — "can edit this record" and "can see
+  this person's bank account number" are kept genuinely distinct
+  questions, checked independently.
+- **A privilege-escalation safeguard**: System Access & Permissions
+  itself stays Super-Admin-only no matter what granular grants someone
+  else holds — nobody can use an "Edit People" permission to grant
+  themselves or anyone else broader system access.
+- **A consistency fix**: Academy's "Manage Content" link and the page it
+  leads to now use the exact same permission check — previously the link
+  could show for someone the page itself would then block.
+- **An honest update to the scope note**: Finance, Operations, Customers,
+  and Sales still have no Add/Edit forms at all (a separate, earlier gap
+  — see `docs/EMPLOYEE_HUB.md`), so there's nothing yet to wire RBAC into
+  there. See `docs/RBAC.md` for the full, current picture.
+
+## Previous build (v13): Role-Based Access Control (RBAC)
+
+The core RBAC engine: a granular View/Create/Edit/Delete/Approve/Export/
+Manage permission matrix per module, System Access & Permissions on every
+Employee Hub profile, 10 Role Templates, and real backend enforcement
+first proven out on Tenders.
 
 ## Previous build (v12): Employee Hub & Tenders Add/Edit
 

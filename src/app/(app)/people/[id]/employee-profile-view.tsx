@@ -47,12 +47,14 @@ export function EmployeeProfileView({
   canViewRestricted,
   isOwnProfile,
   isAdmin,
+  isSuperAdmin,
   managers,
 }: {
   profile: EmployeeProfile;
   canViewRestricted: boolean;
   isOwnProfile: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   managers: { id: string; name: string }[];
 }) {
   const [showEditForm, setShowEditForm] = useState(false);
@@ -267,7 +269,7 @@ export function EmployeeProfileView({
           </CardBody>
         </Card>
 
-        {isAdmin && profile.email && (
+        {isSuperAdmin && profile.email && (
           <SystemAccessPermissions employeeEmail={profile.email} employeeName={profile.preferredName || profile.name} />
         )}
       </div>

@@ -3,20 +3,40 @@
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentUserPermissions } from "@/lib/permissions";
+import { requirePermissionAction } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 
-// Adding or editing an employee's personnel record — including their
-// restricted financial fields — is Super Admin only. This is a
-// deliberately stronger restriction than most of the app's other
-// Add/Edit screens, given how sensitive this specific data is. HR/Admin
-// can still VIEW restricted fields (see employee-hub-core.ts) but editing
-// the record itself is kept to the smallest reasonable group.
-async function assertCallerIsAdmin() {
-  const caller = await getCurrentUserPermissions();
-  if (caller.status !== "active" || !caller.isAdmin) {
-    throw new Error("Only a Super Admin can add or edit employee records.");
+// Real, granular RBAC enforcement — matching the pattern established for
+// Tenders (see docs/RBAC.md). A person needs the specific "Create" or
+// "Edit" action on the People module, not just Super Admin — the HR
+// Manager role template, for example, is deliberately granted "Manage"
+// on People specifically so HR can do this work without needing full
+// Super Admin rights across the whole system.
+//
+// Restricted fields (banking, tax number) are handled separately and
+// more strictly, below — holding "Edit" on People is not by itself
+// enough to submit those two fields; see stripRestrictedFieldsIfUnauthorised().
+async function assertCanEditEmployees(action: "Create" | "Edit") {
+  return requirePermissionAction("people", action);
+}
+
+// If the person submitting this form isn't authorised to see restricted
+// financial data in the first place (see employee-hub-core.ts for the
+// exact rule — self, HR/Admin, Finance, Super Admin), any banking/tax
+// values they tried to submit are silently dropped rather than saved.
+// This matters because "Edit" on People and "authorised to see banking
+// details" are two different questions — someone could reasonably have
+// People Edit rights (e.g. to update someone's department) without also
+// being trusted with their bank account number.
+function stripRestrictedFieldsIfUnauthorised(formData: FormData, caller: Awaited<ReturnType<typeof getCurrentUserPermissions>>) {
+  const authorised = caller.isAdmin || caller.role === "HR/Admin" || caller.role === "Finance";
+  if (!authorised) {
+    formData.delete("bankName");
+    formData.delete("bankAccountNumber");
+    formData.delete("bankBranchCode");
+    formData.delete("bankAccountType");
+    formData.delete("taxNumber");
   }
-  return caller;
 }
 
 function jsonField(formData: FormData, prefix: string) {
@@ -42,7 +62,8 @@ function bankingField(formData: FormData) {
 }
 
 export async function addEmployee(formData: FormData) {
-  const caller = await assertCallerIsAdmin();
+  const caller = await assertCanEditEmployees("Create");
+  stripRestrictedFieldsIfUnauthorised(formData, caller);
   const supabase = createServiceClient();
 
   const name = String(formData.get("name") ?? "").trim();
@@ -83,7 +104,8 @@ export async function addEmployee(formData: FormData) {
 }
 
 export async function updateEmployee(employeeId: string, formData: FormData) {
-  const caller = await assertCallerIsAdmin();
+  const caller = await assertCanEditEmployees("Edit");
+  stripRestrictedFieldsIfUnauthorised(formData, caller);
   const supabase = createServiceClient();
 
   const { error } = await supabase.from("employees").update({
@@ -117,7 +139,7 @@ export async function updateEmployee(employeeId: string, formData: FormData) {
 }
 
 export async function archiveEmployee(employeeId: string) {
-  const caller = await assertCallerIsAdmin();
+  const caller = await requirePermissionAction("people", "Delete");
   const supabase = createServiceClient();
   // Never permanently deleted — becomes Archived, per the offboarding
   // principle from the original Employee Hub brief.
@@ -129,7 +151,7 @@ export async function archiveEmployee(employeeId: string) {
 
 // ---------- EQUIPMENT ----------
 export async function addEquipment(employeeId: string, formData: FormData) {
-  await assertCallerIsAdmin();
+  await assertCanEditEmployees("Edit");
   const supabase = createServiceClient();
   await supabase.from("employee_equipment").insert({
     employee_id: employeeId,
@@ -141,7 +163,7 @@ export async function addEquipment(employeeId: string, formData: FormData) {
 }
 
 export async function returnEquipment(equipmentId: string, employeeId: string) {
-  await assertCallerIsAdmin();
+  await assertCanEditEmployees("Edit");
   const supabase = createServiceClient();
   await supabase.from("employee_equipment").update({ status: "Returned", returned_date: new Date().toISOString().slice(0, 10) }).eq("id", equipmentId);
   revalidatePath(`/people/${employeeId}`);
@@ -149,7 +171,7 @@ export async function returnEquipment(equipmentId: string, employeeId: string) {
 
 // ---------- CERTIFICATIONS ----------
 export async function addCertification(employeeId: string, formData: FormData) {
-  await assertCallerIsAdmin();
+  await assertCanEditEmployees("Edit");
   const supabase = createServiceClient();
   await supabase.from("employee_certifications").insert({
     employee_id: employeeId,

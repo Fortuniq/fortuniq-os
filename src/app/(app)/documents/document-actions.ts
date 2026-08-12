@@ -3,10 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
 import { requireModuleAccess } from "@/lib/permissions";
+import { requirePermissionAction } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 
 export async function catalogueSharePointFile(formData: FormData) {
-  const permissions = await requireModuleAccess("documents");
+  // Real, granular RBAC check — someone with Documents View-only access
+  // (e.g. a Marketing team member under RBAC) cannot catalogue a new
+  // file, only browse existing ones. See docs/RBAC.md.
+  const permissions = await requirePermissionAction("documents", "Create");
 
   const sharepointItemId = String(formData.get("sharepointItemId") ?? "");
   const name = String(formData.get("name") ?? "");
@@ -40,7 +44,7 @@ export async function catalogueSharePointFile(formData: FormData) {
 }
 
 export async function updateDocumentStatus(documentId: string, status: "Draft" | "Approved" | "Archived") {
-  const permissions = await requireModuleAccess("documents");
+  const permissions = await requirePermissionAction("documents", "Edit");
   const supabase = createServiceClient();
 
   const { data: before } = await supabase.from("documents").select("name, status").eq("id", documentId).maybeSingle();

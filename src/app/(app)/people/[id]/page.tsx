@@ -1,13 +1,19 @@
 import { notFound } from "next/navigation";
 import { getEmployeeProfile, getEmployeeDirectory } from "@/lib/data";
-import { requireModuleAccess } from "@/lib/permissions";
+import { requireModuleAccess, getCurrentUserPermissions } from "@/lib/permissions";
+import { checkPermissionAction } from "@/lib/rbac";
 import { canViewRestrictedEmployeeField } from "@/lib/employee-hub-core";
 import { EmployeeProfileView } from "./employee-profile-view";
 
 export default async function EmployeeProfilePage({ params }: { params: Promise<{ id: string }> }) {
-  const permissions = await requireModuleAccess("people");
+  await requireModuleAccess("people");
+  const permissions = await getCurrentUserPermissions();
   const { id } = await params;
-  const [profile, directory] = await Promise.all([getEmployeeProfile(id), getEmployeeDirectory()]);
+  const [profile, directory, canEdit] = await Promise.all([
+    getEmployeeProfile(id),
+    getEmployeeDirectory(),
+    checkPermissionAction(permissions, "people", "Edit"),
+  ]);
 
   if (!profile) notFound();
 
@@ -30,7 +36,15 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
       profile={safeProfile}
       canViewRestricted={canViewBanking || canViewTax}
       isOwnProfile={!!permissions.email && permissions.email.toLowerCase() === (profile.email ?? "").toLowerCase()}
-      isAdmin={permissions.isAdmin}
+      isAdmin={canEdit}
+      // System Access & Permissions manages OTHER people's access to the
+      // whole system — deliberately kept Super-Admin-only, the same
+      // reasoning as Team Management staying Super-Admin-only, regardless
+      // of what granular "Edit" rights someone might separately hold on
+      // the People module itself. Letting RBAC-editing rights be granted
+      // via the RBAC system it controls would be a real privilege-
+      // escalation risk. See docs/RBAC.md.
+      isSuperAdmin={permissions.isAdmin}
       managers={directory.map((e) => ({ id: e.id, name: e.name }))}
     />
   );

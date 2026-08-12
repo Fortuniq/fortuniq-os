@@ -33,7 +33,7 @@ const categoryTone: Record<string, "orange" | "info" | "success" | "warning" | "
 
 const categories = ["All", "Policy", "SOP", "Legal", "Brand", "Certificate", "Licence", "Tax", "Insurance"];
 
-export function DocumentsView({ documents, sharePointConfigured, isAdmin }: { documents: Doc[]; sharePointConfigured: boolean; isAdmin: boolean }) {
+export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCreate, canEdit }: { documents: Doc[]; sharePointConfigured: boolean; isAdmin: boolean; canCreate: boolean; canEdit: boolean }) {
   const [manageAccessDoc, setManageAccessDoc] = useState<Doc | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
@@ -129,8 +129,9 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin }: { do
       render: (r) => (
         <select
           value={r.status}
+          disabled={!canEdit}
           onChange={(e) => updateDocumentStatus(String(r.id), e.target.value as "Draft" | "Approved" | "Archived")}
-          className="text-xs font-semibold rounded-full px-2 py-1 border-0 bg-transparent cursor-pointer"
+          className="text-xs font-semibold rounded-full px-2 py-1 border-0 bg-transparent cursor-pointer disabled:cursor-default disabled:opacity-70"
         >
           <option value="Draft">Draft</option>
           <option value="Approved">Approved</option>
@@ -202,7 +203,7 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin }: { do
         title="Documents"
         description="Policies, SOPs, templates, certificates, licences and company records — files live in SharePoint, catalogued here."
         action={
-          sharePointConfigured ? (
+          sharePointConfigured && canCreate ? (
             <button onClick={openBrowse} className="flex items-center gap-2 bg-navy text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-orange transition-colors">
               <FolderSync className="w-4 h-4" /> Browse SharePoint
             </button>

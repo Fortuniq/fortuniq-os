@@ -1,9 +1,14 @@
 import { getEmployeeDirectory } from "@/lib/data";
-import { requireModuleAccess } from "@/lib/permissions";
+import { requireModuleAccess, getCurrentUserPermissions } from "@/lib/permissions";
+import { checkPermissionAction } from "@/lib/rbac";
 import { PeopleView } from "./people-view";
 
 export default async function PeoplePage() {
-  const permissions = await requireModuleAccess("people");
-  const employees = await getEmployeeDirectory();
-  return <PeopleView employees={employees} isAdmin={permissions.isAdmin} />;
+  await requireModuleAccess("people");
+  const permissions = await getCurrentUserPermissions();
+  const [employees, canAdd] = await Promise.all([
+    getEmployeeDirectory(),
+    checkPermissionAction(permissions, "people", "Create"),
+  ]);
+  return <PeopleView employees={employees} isAdmin={canAdd} />;
 }

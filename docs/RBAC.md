@@ -58,27 +58,48 @@ candidates, given your original Employee Hub brief), the module list in
 `rbac-core.ts` extends to cover them without redesigning anything — see
 "Future Expansion" below.
 
-## Real backend enforcement — and an honest account of how far it reaches today
+## Real backend enforcement — now covering Tenders, Documents, Academy, and Employee Hub
 
 Per your explicit requirement ("hiding menu items is not sufficient"),
 this is built as real, server-side enforcement, not a UI-only mockup.
-**Tenders is the reference implementation**, fully wired: Add, Edit, and
-Delete each check the specific granular action (`Create`, `Edit`,
-`Delete`) via `requirePermissionAction()` in `src/lib/rbac.ts` — not just
-"do they have Tenders module access," which was the old behaviour. This
-was verified by testing the exact Tender Administrator scenario from your
-brief end-to-end.
+**Four modules are now fully wired**, each checking the specific granular
+action rather than just "do they have module access":
 
-**Honestly, not every other module's actions are wired to this same
-granular check yet** — Employee Hub, Documents, Academy, and Team
-Management still use their existing enforcement (module-level access, or
-in Employee Hub's case, a stricter Super-Admin-only gate on editing).
-Extending the same pattern to them is now genuinely easy — each is a
-small, mechanical change following exactly the pattern in
-`tender-actions.ts` — but doing all of them in the same pass as building
-the whole engine would have meant less time verifying the core system
-actually works correctly. Worth asking for as a direct, focused next
-step once you're ready.
+- **Tenders** — Add checks `Create`, Edit checks `Edit`, Delete checks
+  `Delete`. The original reference implementation, verified end-to-end
+  against your exact Tender Administrator example.
+- **Documents** — cataloguing a new file from SharePoint checks `Create`;
+  changing a document's status checks `Edit`. Classification management
+  (deciding what's Confidential and who's authorised) deliberately stays
+  Super-Admin-only regardless of granular grants — see `docs/AI_SECURITY.md`
+  for why that one stays stricter.
+- **Academy** — managing Schools, Courses, Lessons, and Assessment
+  Questions checks `Manage` on the Academy module. This is a deliberate
+  design choice: the HR Manager role template is specifically granted
+  Academy `Manage`, so HR can maintain training content without needing
+  full Super Admin rights over the whole system.
+- **Employee Hub** — adding, editing, and archiving employee records
+  checks `Create` / `Edit` / `Delete` on the People module (again, so HR
+  Manager's People `Manage` grant means something real). **Restricted
+  fields are handled with an extra, separate layer of care**: even
+  someone with People `Edit` granted can't submit banking details or a
+  tax number through the form unless they also pass the existing,
+  stricter `canViewRestrictedEmployeeField` check (self, HR/Admin,
+  Finance, or Super Admin) — those two questions ("can you edit this
+  person's department" and "can you see their bank account number") are
+  kept genuinely separate. **System Access & Permissions itself** — the
+  RBAC matrix — stays deliberately Super-Admin-only no matter what,
+  specifically to prevent a privilege-escalation loophole: someone
+  granted People `Edit` should never be able to use that access to grant
+  themselves or anyone else broader system permissions.
+
+**Honestly, not every module's actions are wired to this yet** —
+Finance, Operations, Customers, and Sales don't have Add/Edit forms at
+all yet (a separate, earlier-stage gap — see `docs/EMPLOYEE_HUB.md`'s
+roadmap), so there's nothing to wire RBAC into there until those forms
+exist. When they're built, following the exact pattern established here
+(see `src/app/(app)/tenders/tender-actions.ts` as the clearest, simplest
+example) is a small, mechanical addition each time.
 
 ## The backward-compatible rollout design
 
