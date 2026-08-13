@@ -50,25 +50,69 @@ checklist storage is tied to a tender being in any particular state.
 ## Honestly, what's not built yet
 
 Per your original request's own sequencing, this was explicitly Phase 1
-(folders + Submissions tab). Still ahead, in the order you originally laid
-out:
+(folders + Submissions tab). Since then, two more phases have shipped:
 
-- **Automatic compliance percentage** calculated from confirmed checklist
-  items, replacing the manually-entered number. The Compliance tab
-  currently shows both side by side (confirmed count and the manual
-  percentage) specifically so the gap is visible, not hidden.
-- **AI-generated checklists** — FortunIQ Intelligence analysing a
-  tender's uploaded documents and proposing the checklist, with the
-  Tender Administrator confirming each item — the AI would never
-  auto-confirm anything itself, per your explicit requirement.
+- ✅ **Automatic compliance percentage**, calculated from confirmed
+  checklist items — see below.
+- ✅ **AI-generated checklists** — see below.
+
+**Still genuinely ahead:**
 - **Full audit logging for document actions** — uploads, removals,
   version changes, and access specifically. Checklist changes (toggle,
-  add, delete) and folder creation are already audit-logged today;
-  logging the SharePoint file-level actions themselves (which happen
-  inside SharePoint's own UI, outside FortunIQ OS's direct control once
-  someone clicks "Open in SharePoint") is the more involved remaining
-  piece — likely requiring Microsoft Graph's delta/webhook capabilities
-  to know when a file actually changes.
+  add, delete, AI generation) and folder creation are already
+  audit-logged today; logging the SharePoint file-level actions
+  themselves (which happen inside SharePoint's own UI, outside FortunIQ
+  OS's direct control once someone clicks "Open in SharePoint") is the
+  more involved remaining piece — likely requiring Microsoft Graph's
+  delta/webhook capabilities to know when a file actually changes.
+
+## Automatic compliance calculation
+
+The Compliance tab no longer relies on a manually-typed percentage.
+`calculateCompliancePct()` in `src/lib/tender-core.ts` computes it directly
+from the checklist: confirmed items ÷ total items, rounded to the nearest
+percent. This applies everywhere compliance is shown — the Compliance tab
+itself and the green bar in the Tender Register.
+
+**One deliberate design choice worth understanding**: a tender with *no*
+checklist yet shows "Not yet assessed," not "0% compliant." Those are
+genuinely different situations — a 0% shown after real assessment implies
+failure; a tender that simply hasn't had its checklist built yet hasn't
+failed anything. The old manually-entered number is kept only as a
+fallback for that specific empty-checklist state, never once a real
+checklist exists.
+
+## AI-generated checklists
+
+**FortunIQ Intelligence** can now propose a tender's checklist directly
+from that tender's own SharePoint documents — the "Generate Checklist
+with FortunIQ Intelligence" button on the Compliance tab. Exactly per your
+requirement:
+
+- **The AI only proposes — it never confirms.** Every AI-generated item
+  is inserted with `done: false`; only a human ticking the checkbox
+  changes that, identically to a manually-added item.
+- **AI-sourced items are visually marked** with a small orange badge, so
+  it's always clear which requirements were suggested by the AI versus
+  added by a person — and they're fully editable/deletable by anyone
+  authorised to manage the tender.
+- **Permission inheritance is structural, not a filter bolted on
+  afterward.** The AI reads documents using the *signed-in person's own*
+  Microsoft access token, and only ever from *this specific tender's*
+  SharePoint folder ID — there is no code path that could reach another
+  tender's folder, HR, Finance, or anything else. If the signed-in person
+  couldn't open a document themselves, Microsoft Graph refuses the
+  request before the AI ever sees it.
+- **Every generation run is logged** to the AI security log (which
+  documents were in scope, by name only — never their content) and the
+  general audit log.
+
+**One honest, current limitation**: text is only extracted from plain
+text-based formats today. The far more common real-world tender formats —
+PDF and Word — currently fall back to inferring from the filename alone
+(e.g. a file literally named `SBD4_Declaration.pdf` still gives the AI a
+strong hint). Real PDF/Word text extraction is a genuine next step, not
+yet built — see `getDocumentTextContent()` in `src/lib/graph.ts`.
 
 ## Security
 
@@ -115,3 +159,14 @@ below is for.
    set that via System Access & Permissions) and confirm they can see all
    four tabs, but can't tick checklist items, add documents, or save
    Submissions info.
+8. **Tick and untick a few checklist items** on a real tender and confirm
+   the compliance percentage recalculates immediately, both on the
+   Compliance tab and back on the Tender Register's progress bar.
+9. **Upload a real tender document** (even a plain `.txt` file with some
+   requirements listed, to test the easy case first) into the tender's
+   "Tender Documents (RFT)" SharePoint subfolder, then click **Generate
+   Checklist with FortunIQ Intelligence** and confirm new items appear
+   with the orange AI badge, all unticked.
+10. **Check the AI Security Log** (Audit Logs page) after that run and
+    confirm it shows the document names that were analysed — never their
+    content, and never anything from another tender.

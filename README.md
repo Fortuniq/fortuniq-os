@@ -1,39 +1,46 @@
-# FortunIQ OS — v15 Build — Tender Document Workspace (Phase 1) & SharePoint Fix
+# FortunIQ OS — v16 Build — Automatic Compliance & AI-Generated Checklists
 
-The complete internal operating system for FortunIQ Fuels — a real,
-**critical SharePoint connectivity bug fixed** (the token refresh URL was
-malformed, silently breaking SharePoint access after about an hour on
-every session), plus **Phase 1 of the Tender Document Workspace**: every
-tender now gets its own automatically-created SharePoint folder, a
-dedicated in-app document browser, and a Submissions tab. Backed by
-**177 automated tests**.
+The complete internal operating system for FortunIQ Fuels — the Tender
+Document Workspace now calculates compliance automatically from real
+checklist progress instead of a manually-typed number, and **FortunIQ
+Intelligence can propose a tender's checklist directly from its own
+SharePoint documents** — proposing only, never confirming, with the same
+strict permission-inheritance architecture as the rest of the AI system.
+Also fixes a real SharePoint write-permission bug (folder creation was
+silently failing with a 403) and how Server Action errors reach the
+screen. Backed by **183 automated tests**.
 
 ## What's new in this build
 
-- **Fixed a real, live SharePoint bug**: the Microsoft Graph token
-  refresh URL was malformed (a duplicated `/v2.0/` segment), causing
-  every refresh attempt to silently fail with a 404 — meaning SharePoint
-  access broke about an hour into every session, with no clear error
-  shown anywhere. Fixed, with a permanent regression test
-  (`src/lib/auth-url-construction.test.ts`) so this specific mistake
-  can't quietly return.
-- **Every tender now gets its own SharePoint folder automatically**,
-  named `Tenders/{ref} - {title}`, with five standard subfolders —
-  created using the Tender Administrator's own Microsoft permissions,
-  never blocking tender creation if it fails.
-- **A real document workspace per tender** at `/tenders/[id]`: Overview,
-  Compliance, Documents, and Submissions tabs. The folder icon in the
-  Tender Register opens this directly.
-- **The Documents tab** browses that specific tender's SharePoint folder
-  in-app via Microsoft Graph, with an "Open in SharePoint" button that
-  goes to that tender's specific folder — never the general library.
-- **The Submissions tab**: Submission Method (Online/Hand Delivery) and
-  Submission Date/Time, per tender.
-- **A genuinely per-tender checklist**, linked by `tender_id` — replacing
-  the old single example checklist shared across every tender.
-- **An honest scope note**: automatic compliance calculation and
-  AI-generated checklists are the next phases, not yet built — see
-  `docs/TENDER_WORKSPACE.md`.
+- **Fixed a second real SharePoint bug**: the app was requesting
+  read-only Graph permissions (`Files.Read.All` / `Sites.Read.All`),
+  which silently blocks every *write* operation — including automatic
+  tender folder creation — with a 403 "accessDenied," even though sign-in
+  and browsing worked completely normally. Upgraded to
+  `Files.ReadWrite.All` / `Sites.ReadWrite.All`.
+- **Fixed how Server Action errors reach the screen**: thrown errors were
+  getting redacted by Next.js in production down to a generic "Minified
+  React error" code. Tender folder creation and AI checklist generation
+  now *return* their errors instead of throwing them, so the real reason
+  always reaches the person using the app, not just the server logs.
+- **Automatic compliance calculation**: the Tender Register's green bar
+  and the Compliance tab both now show a real percentage calculated from
+  confirmed checklist items — never a stale, manually-typed number once
+  a checklist exists.
+- **AI-generated tender checklists**: FortunIQ Intelligence analyses a
+  tender's own SharePoint documents and proposes a checklist — visually
+  badged as AI-sourced, never auto-confirmed, fully editable, and logged
+  to the AI Security Log with the same document-name-only privacy
+  standard as the rest of the AI system.
+- **An honest, current limitation**: AI checklist generation reads plain
+  text formats today; PDF and Word (the most common real tender formats)
+  fall back to inferring from filename alone. See `docs/TENDER_WORKSPACE.md`.
+
+## Previous build (v15): Tender Document Workspace (Phase 1) & SharePoint Fix
+
+Fixed a critical SharePoint token-refresh bug, and shipped Phase 1 of the
+Tender Document Workspace: automatic SharePoint folder creation per
+tender, a four-tab document workspace, and the Submissions tab.
 
 ## Previous build (v14): RBAC Enforcement Expanded
 

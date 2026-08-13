@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import * as mock from "@/lib/mock-data";
+import { calculateCompliancePct } from "@/lib/tender-core";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -247,18 +248,39 @@ export async function getTenders() {
   if (!supabaseConfigured) return mock.tenders;
   try {
     const supabase = createServiceClient();
-    const { data, error } = await supabase.from("tenders").select("*").order("closing_date");
+    const [{ data, error }, { data: checklistRows }] = await Promise.all([
+      supabase.from("tenders").select("*").order("closing_date"),
+      supabase.from("tender_checklist_items").select("tender_id, done"),
+    ]);
     if (error || !data || data.length === 0) return mock.tenders;
-    return data.map((t) => ({
-      id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage,
-      value: Number(t.value), compliance: t.compliance, sharepointFolderId: t.sharepoint_folder_id,
-    }));
+
+    // Grouped once, here, rather than one query per tender — real
+    // compliance is calculated per tender from ITS OWN checklist items
+    // only, via calculateCompliancePct(); a tender with no checklist yet
+    // falls back to its manually-entered value instead of showing a
+    // misleading 0%. See docs/TENDER_WORKSPACE.md.
+    const itemsByTender = new Map<string, { done: boolean }[]>();
+    for (const row of checklistRows ?? []) {
+      const list = itemsByTender.get(row.tender_id) ?? [];
+      list.push({ done: row.done });
+      itemsByTender.set(row.tender_id, list);
+    }
+
+    return data.map((t) => {
+      const items = itemsByTender.get(t.id) ?? [];
+      const { pct } = calculateCompliancePct(items);
+      return {
+        id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage,
+        value: Number(t.value), compliance: pct ?? Number(t.compliance ?? 0), complianceIsCalculated: pct !== null,
+        sharepointFolderId: t.sharepoint_folder_id,
+      };
+    });
   } catch {
     return mock.tenders;
   }
 }
 
-export type TenderChecklistItem = { id: string; item: string; done: boolean };
+export type TenderChecklistItem = { id: string; item: string; done: boolean; source: "manual" | "ai" };
 
 export type TenderDetail = {
   id: string;
@@ -269,6 +291,7 @@ export type TenderDetail = {
   stage: string;
   value: number;
   compliance: number;
+  complianceIsCalculated: boolean;
   sharepointFolderId: string | null;
   sharepointFolderUrl: string | null;
   submissionMethod: string | null;
@@ -284,11 +307,14 @@ export async function getTenderDetail(tenderId: string): Promise<TenderDetail | 
   if (!supabaseConfigured) {
     const mockTender = mock.tenders.find((t) => String(t.id) === tenderId);
     if (!mockTender) return null;
+    const mockChecklist = mock.tenderChecklist.map((c, i) => ({ id: String(i), item: c.item, done: c.done, source: "manual" as const }));
+    const { pct } = calculateCompliancePct(mockChecklist);
     return {
       id: String(mockTender.id), ref: mockTender.ref, title: mockTender.title, closing: mockTender.closing,
-      status: mockTender.status, stage: mockTender.stage, value: mockTender.value, compliance: mockTender.compliance,
+      status: mockTender.status, stage: mockTender.stage, value: mockTender.value, compliance: pct ?? mockTender.compliance,
+      complianceIsCalculated: pct !== null,
       sharepointFolderId: null, sharepointFolderUrl: null, submissionMethod: null, submissionDatetime: null,
-      checklist: mock.tenderChecklist.map((c, i) => ({ id: String(i), item: c.item, done: c.done })),
+      checklist: mockChecklist,
     };
   }
   try {
@@ -297,13 +323,14 @@ export async function getTenderDetail(tenderId: string): Promise<TenderDetail | 
     if (error || !t) return null;
 
     const { data: checklist } = await supabase.from("tender_checklist_items").select("*").eq("tender_id", tenderId).order("created_at");
+    const { pct } = calculateCompliancePct((checklist ?? []).map((c) => ({ done: c.done })));
 
     return {
       id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage,
-      value: Number(t.value), compliance: t.compliance,
+      value: Number(t.value), compliance: pct ?? Number(t.compliance ?? 0), complianceIsCalculated: pct !== null,
       sharepointFolderId: t.sharepoint_folder_id, sharepointFolderUrl: t.sharepoint_folder_url,
       submissionMethod: t.submission_method, submissionDatetime: t.submission_datetime,
-      checklist: (checklist ?? []).map((c) => ({ id: c.id, item: c.item, done: c.done })),
+      checklist: (checklist ?? []).map((c) => ({ id: c.id, item: c.item, done: c.done, source: c.source ?? "manual" })),
     };
   } catch {
     return null;

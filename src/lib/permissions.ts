@@ -41,6 +41,7 @@ const supabaseConfigured =
  */
 export async function getCurrentUserPermissions(): Promise<UserPermissions> {
 
+
   const session = await auth();
   if (!session?.user?.email) {
     return { isAdmin: false, allowedModules: [], status: "signed-out" };

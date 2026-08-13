@@ -21,6 +21,7 @@ type Tender = {
   stage: string;
   value: number;
   compliance: number;
+  complianceIsCalculated?: boolean;
 };
 
 type ChecklistItem = { item: string; done: boolean };
@@ -50,7 +51,9 @@ export function TendersView({ tenders, checklist, canManage }: { tenders: Tender
     {
       key: "compliance",
       header: "Compliance",
-      render: (r) => (
+      render: (r) => r.complianceIsCalculated === false ? (
+        <span className="text-xs text-light-grey">Not yet assessed</span>
+      ) : (
         <div className="flex items-center gap-2 w-28">
           <div className="h-1.5 flex-1 rounded-full bg-border overflow-hidden">
             <div

@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
 import { requirePermissionAction } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
+import { logAISecurityEvent } from "@/lib/ai-security";
 import { auth } from "@/auth";
-import { ensureTenderFolder, isSharePointConfigured } from "@/lib/graph";
+import { ensureTenderFolder, isSharePointConfigured, listFolderContents, getDocumentTextContent } from "@/lib/graph";
+import Anthropic from "@anthropic-ai/sdk";
 
 export async function addTender(formData: FormData) {
   // Real, backend-enforced RBAC — not just a hidden button. Someone with
@@ -191,4 +193,137 @@ export async function retryTenderFolderCreation(tenderId: string, ref: string, t
   });
   revalidatePath(`/tenders/${tenderId}`);
   return {};
+}
+
+// =========================================================================
+// AI-GENERATED CHECKLIST
+// =========================================================================
+// FortunIQ Intelligence proposes a checklist by analysing this specific
+// tender's own SharePoint documents — it NEVER decides whether a
+// requirement has actually been met; every item starts unconfirmed
+// (done: false) and only a human ticking the box changes that. See
+// docs/TENDER_WORKSPACE.md, and docs/AI_SECURITY.md for the shared
+// permission-inheritance architecture this follows.
+export async function generateChecklistWithAI(
+  tenderId: string,
+  ref: string,
+  title: string
+): Promise<{ error?: string; itemsAdded?: number }> {
+  const permissions = await requirePermissionAction("tenders", "Edit");
+  if (!isSharePointConfigured) return { error: "SharePoint isn't connected yet." };
+
+  const session = await auth();
+  if (!session?.accessToken) return { error: "Your Microsoft session needs refreshing — try signing out and back in." };
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { error: "FortunIQ Intelligence isn't connected yet — see docs/AI_ASSISTANT_SETUP.md." };
+
+  const supabase = createServiceClient();
+  const { data: tender } = await supabase.from("tenders").select("sharepoint_folder_id").eq("id", tenderId).maybeSingle();
+  if (!tender?.sharepoint_folder_id) {
+    return { error: "This tender doesn't have a SharePoint folder yet — create one from the Documents tab first." };
+  }
+
+  // Only ever reads from THIS tender's own folder, using the signed-in
+  // person's own Microsoft token. This is what actually enforces
+  // permission inheritance here — not an extra filtering step, but the
+  // simple fact that Graph itself only returns what this folder ID
+  // contains and what this specific person can open. There is no code
+  // path in this function that can reach another tender's folder, HR,
+  // Finance, or anything else — the folder ID itself is the boundary.
+  let topLevel;
+  try {
+    topLevel = await listFolderContents(session.accessToken as string, tender.sharepoint_folder_id);
+  } catch (err) {
+    // Returned, not thrown — see the comment on retryTenderFolderCreation
+    // for why: an unhandled throw here would get redacted by Next.js
+    // down to an unhelpful generic message on the client in production.
+    return { error: `Couldn't read the tender's documents: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  const allFiles: { id: string; name: string }[] = [];
+  for (const entry of topLevel) {
+    if (entry.isFolder) {
+      const inner = await listFolderContents(session.accessToken as string, entry.id).catch(() => []);
+      allFiles.push(...inner.filter((f) => !f.isFolder).map((f) => ({ id: f.id, name: f.name })));
+    } else {
+      allFiles.push({ id: entry.id, name: entry.name });
+    }
+  }
+
+  if (allFiles.length === 0) {
+    return { error: "No documents found in this tender's SharePoint folder yet — upload the tender documentation first, then try again." };
+  }
+
+  // Real text where it's extractable (currently plain text / JSON
+  // formats only — see getDocumentTextContent in src/lib/graph.ts).
+  // PDFs and Word documents, the most common real tender document
+  // formats, fall back to their filename alone. This is a genuine,
+  // known limitation — the AI can often still infer a lot from
+  // well-named files (e.g. "SBD4_Declaration.pdf"), but it isn't
+  // reading the actual content of most real-world tender packs yet.
+  // See docs/TENDER_WORKSPACE.md.
+  const documentSummaries: string[] = [];
+  for (const file of allFiles.slice(0, 15)) {
+    const text = await getDocumentTextContent(session.accessToken as string, file.id).catch(() => null);
+    documentSummaries.push(
+      text ? `Document: ${file.name}\nContent:\n${text.slice(0, 3000)}` : `Document: ${file.name} (content not extractable — infer from filename only)`
+    );
+  }
+
+  const anthropic = new Anthropic({ apiKey });
+  let items: string[];
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
+      system: `You generate submission checklists for South African fuel-supply tenders. You NEVER decide whether a
+document has actually been submitted, attached, or is compliant — you only propose what appears to be required,
+based on the tender documentation provided. Respond with ONLY a JSON array of short strings, one per required item
+(document, declaration, schedule, or certificate) — nothing else, no explanation, no markdown formatting.
+Example: ["B-BBEE Certificate (valid)", "Tax Compliance Certificate", "SBD 4 - Declaration of Interest"]`,
+      messages: [{
+        role: "user",
+        content: `Tender: "${title}" (reference ${ref})\n\nDocuments found in this tender's folder:\n\n${documentSummaries.join("\n\n")}`,
+      }],
+    });
+    const textBlock = response.content.find((b) => b.type === "text");
+    const raw = textBlock?.type === "text" ? textBlock.text : "[]";
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    items = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+  } catch (err) {
+    return { error: `FortunIQ Intelligence couldn't analyse these documents: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: "FortunIQ Intelligence couldn't identify any specific requirements from these documents. Try adding the tender documentation first, or add checklist items manually." };
+  }
+
+  // Never duplicate an item that's already on the checklist (manual or
+  // from a previous AI run) — case-insensitive, trimmed comparison.
+  const { data: existing } = await supabase.from("tender_checklist_items").select("item").eq("tender_id", tenderId);
+  const existingLower = new Set((existing ?? []).map((e) => e.item.toLowerCase().trim()));
+  const newItems = items.filter((i) => typeof i === "string" && i.trim() && !existingLower.has(i.toLowerCase().trim()));
+
+  if (newItems.length > 0) {
+    await supabase.from("tender_checklist_items").insert(
+      newItems.map((item) => ({ tender_id: tenderId, item, done: false, source: "ai" }))
+    );
+  }
+
+  await logAISecurityEvent({
+    actorEmail: permissions.email!,
+    actorName: permissions.name,
+    aiModule: "tender-checklist",
+    dataSourcesAccessed: allFiles.map((f) => ({ id: f.id, name: f.name })),
+    executionOutcome: "answered",
+  });
+
+  await logAudit({
+    actorEmail: permissions.email!, actorName: permissions.name, action: "document_catalogued",
+    targetType: "tender", targetId: tenderId, metadata: { field: "ai_checklist_generated", itemsAdded: newItems.length },
+  });
+
+  revalidatePath(`/tenders/${tenderId}`);
+  return { itemsAdded: newItems.length };
 }
