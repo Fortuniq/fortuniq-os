@@ -255,14 +255,11 @@ export async function generateChecklistWithAI(
     return { error: "No documents found in this tender's SharePoint folder yet — upload the tender documentation first, then try again." };
   }
 
-  // Real text where it's extractable (currently plain text / JSON
-  // formats only — see getDocumentTextContent in src/lib/graph.ts).
-  // PDFs and Word documents, the most common real tender document
-  // formats, fall back to their filename alone. This is a genuine,
-  // known limitation — the AI can often still infer a lot from
-  // well-named files (e.g. "SBD4_Declaration.pdf"), but it isn't
-  // reading the actual content of most real-world tender packs yet.
-  // See docs/TENDER_WORKSPACE.md.
+  // Real text extraction — plain text/JSON, PDF, and Word (.docx) are
+  // all genuinely read via getDocumentTextContent in src/lib/graph.ts,
+  // not just inferred from filename. Only the old, pre-2007 .doc format
+  // still falls back to filename-only inference — see
+  // docs/TENDER_WORKSPACE.md.
   const documentSummaries: string[] = [];
   for (const file of allFiles.slice(0, 15)) {
     const text = await getDocumentTextContent(session.accessToken as string, file.id).catch(() => null);

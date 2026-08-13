@@ -107,12 +107,23 @@ requirement:
   documents were in scope, by name only — never their content) and the
   general audit log.
 
-**One honest, current limitation**: text is only extracted from plain
-text-based formats today. The far more common real-world tender formats —
-PDF and Word — currently fall back to inferring from the filename alone
-(e.g. a file literally named `SBD4_Declaration.pdf` still gives the AI a
-strong hint). Real PDF/Word text extraction is a genuine next step, not
-yet built — see `getDocumentTextContent()` in `src/lib/graph.ts`.
+**PDF and Word (.docx) text extraction is now real**, not filename-only
+inference. `getDocumentTextContent()` in `src/lib/graph.ts` downloads a
+document's actual content via Microsoft Graph and extracts real text
+using `pdf-parse` (PDF) and `mammoth` (.docx) — both pure-JavaScript
+libraries chosen deliberately to keep working reliably in Netlify's
+serverless functions, with no native binary dependencies to worry about.
+This was verified with a genuine functional test
+(`src/lib/pdf-extraction.test.ts`) that builds a real, valid PDF and
+confirms its text comes back out correctly — not just that the code
+compiles.
+
+**One remaining, narrower limitation**: the old, pre-2007 `.doc` format
+(as opposed to `.docx`) is a genuinely different binary format that
+`mammoth` — and most pure-JavaScript libraries — can't parse. These files
+fall back to filename-only inference, same as before. Converting a `.doc`
+file to `.docx` first is the practical workaround, and worth mentioning
+if anyone uploads tender documents in the older format.
 
 ## Security
 

@@ -1,40 +1,37 @@
-# FortunIQ OS — v16 Build — Automatic Compliance & AI-Generated Checklists
+# FortunIQ OS — v17 Build — Real PDF & Word Text Extraction
 
-The complete internal operating system for FortunIQ Fuels — the Tender
-Document Workspace now calculates compliance automatically from real
-checklist progress instead of a manually-typed number, and **FortunIQ
-Intelligence can propose a tender's checklist directly from its own
-SharePoint documents** — proposing only, never confirming, with the same
-strict permission-inheritance architecture as the rest of the AI system.
-Also fixes a real SharePoint write-permission bug (folder creation was
-silently failing with a 403) and how Server Action errors reach the
-screen. Backed by **183 automated tests**.
+The complete internal operating system for FortunIQ Fuels — FortunIQ
+Intelligence's tender checklist generation now reads the **actual
+content** of PDF and Word documents, not just their filenames. Backed by
+**184 automated tests**, including a genuine functional test that builds
+a real PDF and confirms its text is correctly extracted.
 
 ## What's new in this build
 
-- **Fixed a second real SharePoint bug**: the app was requesting
-  read-only Graph permissions (`Files.Read.All` / `Sites.Read.All`),
-  which silently blocks every *write* operation — including automatic
-  tender folder creation — with a 403 "accessDenied," even though sign-in
-  and browsing worked completely normally. Upgraded to
-  `Files.ReadWrite.All` / `Sites.ReadWrite.All`.
-- **Fixed how Server Action errors reach the screen**: thrown errors were
-  getting redacted by Next.js in production down to a generic "Minified
-  React error" code. Tender folder creation and AI checklist generation
-  now *return* their errors instead of throwing them, so the real reason
-  always reaches the person using the app, not just the server logs.
-- **Automatic compliance calculation**: the Tender Register's green bar
-  and the Compliance tab both now show a real percentage calculated from
-  confirmed checklist items — never a stale, manually-typed number once
-  a checklist exists.
-- **AI-generated tender checklists**: FortunIQ Intelligence analyses a
-  tender's own SharePoint documents and proposes a checklist — visually
-  badged as AI-sourced, never auto-confirmed, fully editable, and logged
-  to the AI Security Log with the same document-name-only privacy
-  standard as the rest of the AI system.
-- **An honest, current limitation**: AI checklist generation reads plain
-  text formats today; PDF and Word (the most common real tender formats)
-  fall back to inferring from filename alone. See `docs/TENDER_WORKSPACE.md`.
+- **Real PDF text extraction**, via `pdf-parse` — a pure-JavaScript
+  library with no native binary dependencies, chosen deliberately to keep
+  working reliably in Netlify's serverless functions.
+- **Real Word (.docx) text extraction**, via `mammoth`.
+- **A genuinely real test, not just a build check**: `pdf-extraction.test.ts`
+  constructs a valid PDF from scratch (computing its byte offsets
+  programmatically, not hand-counted) and confirms the exact text comes
+  back out — proof the extraction pipeline actually works, not just that
+  the code compiles.
+- **A real library bug found and worked around**: `pdf-parse`'s own
+  package has a debug-mode detection bug that crashes on load in some
+  module-loading contexts. Fixed by importing its inner implementation
+  file directly, bypassing the buggy wrapper — with a proper TypeScript
+  declaration file so this stays fully type-checked, not just suppressed.
+- **One remaining, narrower limitation**: the old pre-2007 `.doc` format
+  (distinct from `.docx`) still isn't supported — converting to `.docx`
+  first is the practical workaround. See `docs/TENDER_WORKSPACE.md`.
+
+## Previous build (v16): Automatic Compliance & AI-Generated Checklists
+
+Compliance percentages are now calculated automatically from confirmed
+checklist items, and FortunIQ Intelligence can propose a tender's
+checklist directly from its own SharePoint documents — proposing only,
+never confirming.
 
 ## Previous build (v15): Tender Document Workspace (Phase 1) & SharePoint Fix
 

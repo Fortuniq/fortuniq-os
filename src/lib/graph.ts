@@ -128,10 +128,58 @@ export async function getDocumentTextContent(accessToken: string, itemId: string
   });
   if (!res.ok) return null;
   const contentType = res.headers.get("content-type") ?? "";
+
   if (contentType.includes("text/") || contentType.includes("json")) {
     return res.text();
   }
-  return null; // binary formats (docx, pdf, xlsx) — not extracted in this version
+
+  // PDF and Word (.docx) are the most common real tender document
+  // formats, so real text extraction matters here specifically — a
+  // filename-only fallback (the old behaviour) misses everything the
+  // document actually says. Both libraries are pure JavaScript, chosen
+  // deliberately so this keeps working in Netlify's serverless
+  // functions without any native binary dependencies to worry about.
+  // Extraction failures are swallowed here, not thrown — a single
+  // unreadable or corrupted file should never break the rest of an AI
+  // checklist run; the caller already falls back to inferring from the
+  // filename alone when this returns null. See docs/TENDER_WORKSPACE.md.
+  try {
+    if (contentType.includes("application/pdf")) {
+      const buffer = Buffer.from(await res.arrayBuffer());
+      // Imported from pdf-parse's inner lib file, not the package root —
+      // pdf-parse@1.x's own index.js has a well-known bug where it
+      // misdetects certain module-loading contexts (including dynamic
+      // import()) as "being run directly," and tries to read a sample
+      // PDF that only exists inside the package's own repository,
+      // crashing on load. The actual parsing logic underneath is fine;
+      // this simply bypasses the buggy wrapper around it.
+      const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
+      const parsed = await pdfParse(buffer);
+      return parsed.text || null;
+    }
+
+    if (contentType.includes("wordprocessingml.document")) {
+      // .docx specifically — mammoth's format (Office Open XML).
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value || null;
+    }
+
+    if (contentType.includes("application/msword")) {
+      // Old, pre-2007 .doc format — a genuinely different binary format
+      // that mammoth (and most pure-JS libraries) can't parse. Rather
+      // than fail silently or produce garbled text, this is an honest
+      // "not supported" rather than attempting extraction. Converting
+      // the file to .docx first is the practical workaround.
+      return null;
+    }
+  } catch (err) {
+    console.error("getDocumentTextContent: extraction failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+
+  return null; // other binary formats (xlsx, images, etc.) — not extracted
 }
 
 function mapDriveItem(item: Record<string, unknown>): SharePointFile {
