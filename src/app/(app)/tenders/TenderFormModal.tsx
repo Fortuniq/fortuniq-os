@@ -18,6 +18,7 @@ type Tender = {
 export function TenderFormModal({ tender, onClose }: { tender?: Tender; onClose: () => void }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [folderWarning, setFolderWarning] = useState<string | null>(null);
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -25,14 +26,46 @@ export function TenderFormModal({ tender, onClose }: { tender?: Tender; onClose:
       try {
         if (tender) {
           await updateTender(String(tender.id), formData);
+          onClose();
         } else {
-          await addTender(formData);
+          const result = await addTender(formData);
+          if (result?.folderWarning) {
+            // The tender itself was created successfully — don't close
+            // the modal silently. Show the warning and let the person
+            // dismiss it themselves, so a SharePoint folder problem is
+            // never invisible.
+            setFolderWarning(result.folderWarning);
+          } else {
+            onClose();
+          }
         }
-        onClose();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
       }
     });
+  }
+
+  if (folderWarning) {
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6" onClick={onClose}>
+        <div className="bg-white rounded-xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b border-border">
+            <p className="font-semibold text-navy">Tender Created</p>
+            <button onClick={onClose}><X className="w-5 h-5 text-grey" /></button>
+          </div>
+          <div className="p-4">
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2.5">
+              {folderWarning}
+            </div>
+            <div className="flex justify-end mt-4">
+              <button onClick={onClose} className="text-sm font-semibold text-white bg-navy px-4 py-2 rounded-lg hover:bg-orange transition-colors">
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
