@@ -249,9 +249,64 @@ export async function getTenders() {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("tenders").select("*").order("closing_date");
     if (error || !data || data.length === 0) return mock.tenders;
-    return data.map((t) => ({ id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage, value: Number(t.value), compliance: t.compliance }));
+    return data.map((t) => ({
+      id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage,
+      value: Number(t.value), compliance: t.compliance, sharepointFolderId: t.sharepoint_folder_id,
+    }));
   } catch {
     return mock.tenders;
+  }
+}
+
+export type TenderChecklistItem = { id: string; item: string; done: boolean };
+
+export type TenderDetail = {
+  id: string;
+  ref: string;
+  title: string;
+  closing: string;
+  status: string;
+  stage: string;
+  value: number;
+  compliance: number;
+  sharepointFolderId: string | null;
+  sharepointFolderUrl: string | null;
+  submissionMethod: string | null;
+  submissionDatetime: string | null;
+  checklist: TenderChecklistItem[];
+};
+
+/**
+ * Every tender has its own independent checklist, linked by tender_id —
+ * never a shared/global checklist. See docs/TENDER_WORKSPACE.md.
+ */
+export async function getTenderDetail(tenderId: string): Promise<TenderDetail | null> {
+  if (!supabaseConfigured) {
+    const mockTender = mock.tenders.find((t) => String(t.id) === tenderId);
+    if (!mockTender) return null;
+    return {
+      id: String(mockTender.id), ref: mockTender.ref, title: mockTender.title, closing: mockTender.closing,
+      status: mockTender.status, stage: mockTender.stage, value: mockTender.value, compliance: mockTender.compliance,
+      sharepointFolderId: null, sharepointFolderUrl: null, submissionMethod: null, submissionDatetime: null,
+      checklist: mock.tenderChecklist.map((c, i) => ({ id: String(i), item: c.item, done: c.done })),
+    };
+  }
+  try {
+    const supabase = createServiceClient();
+    const { data: t, error } = await supabase.from("tenders").select("*").eq("id", tenderId).maybeSingle();
+    if (error || !t) return null;
+
+    const { data: checklist } = await supabase.from("tender_checklist_items").select("*").eq("tender_id", tenderId).order("created_at");
+
+    return {
+      id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage,
+      value: Number(t.value), compliance: t.compliance,
+      sharepointFolderId: t.sharepoint_folder_id, sharepointFolderUrl: t.sharepoint_folder_url,
+      submissionMethod: t.submission_method, submissionDatetime: t.submission_datetime,
+      checklist: (checklist ?? []).map((c) => ({ id: c.id, item: c.item, done: c.done })),
+    };
+  } catch {
+    return null;
   }
 }
 

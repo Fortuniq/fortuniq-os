@@ -173,3 +173,111 @@ export async function canUserAccessItem(accessToken: string, itemId: string): Pr
 }
 
 export const isSharePointConfigured = !!process.env.SHAREPOINT_SITE_URL;
+
+// =========================================================================
+// PER-TENDER DOCUMENT WORKSPACES
+// =========================================================================
+
+// Created automatically inside every new tender's folder. Adjust this
+// list if your real tender workflow needs different subfolders — no
+// other code changes are needed, this is the single source of truth.
+export const TENDER_STANDARD_SUBFOLDERS = [
+  "01 - Tender Documents (RFT)",
+  "02 - Compliance Documents",
+  "03 - Pricing  Schedules",
+  "04 - Submission Pack",
+  "05 - Correspondence",
+];
+
+function sanitiseFolderName(name: string): string {
+  // SharePoint/OneDrive forbid these characters in item names.
+  return name.replace(/[\\/:*?"<>|]/g, "-").trim().slice(0, 150);
+}
+
+function encodePathSegment(segment: string): string {
+  return encodeURIComponent(segment);
+}
+
+/**
+ * Gets a folder by path if it already exists, without creating anything.
+ * Returns null (not an error) if it doesn't exist yet — this is the
+ * normal, expected case the first time a tender's folder is set up.
+ */
+async function getFolderByPath(accessToken: string, driveId: string, path: string): Promise<{ id: string; webUrl: string } | null> {
+  try {
+    const data = await graphFetch(`/drives/${driveId}/root:/${path}`, accessToken);
+    return { id: data.id as string, webUrl: data.webUrl as string };
+  } catch (err) {
+    if (err instanceof GraphError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Creates a folder if it doesn't already exist, or returns the existing
+ * one — safe to call repeatedly (idempotent), which matters because
+ * tender creation should never fail or duplicate folders just because
+ * someone re-triggers it.
+ */
+async function ensureFolder(accessToken: string, driveId: string, parentPath: string, folderName: string): Promise<{ id: string; webUrl: string }> {
+  const cleanName = sanitiseFolderName(folderName);
+  const fullPath = parentPath ? `${parentPath}/${encodePathSegment(cleanName)}` : encodePathSegment(cleanName);
+
+  const existing = await getFolderByPath(accessToken, driveId, fullPath);
+  if (existing) return existing;
+
+  const parentUrl = parentPath ? `/drives/${driveId}/root:/${parentPath}:/children` : `/drives/${driveId}/root/children`;
+  const created = await graphFetch(parentUrl, accessToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: cleanName, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
+  });
+  return { id: created.id as string, webUrl: created.webUrl as string };
+}
+
+/**
+ * Creates (or finds, if already created — safe to call more than once)
+ * a dedicated SharePoint folder for a tender, named
+ * "Tenders/{ref} - {title}", with the standard subfolders inside it.
+ * Uses the CURRENT SIGNED-IN PERSON'S own delegated permissions, same as
+ * every other function in this file — the folder is created "as" the
+ * Tender Administrator who created the tender, not a shared app identity.
+ */
+export async function ensureTenderFolder(
+  accessToken: string,
+  tenderRef: string,
+  tenderTitle: string
+): Promise<{ folderId: string; folderUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+
+  // Ensure the top-level "Tenders" folder exists first.
+  await ensureFolder(accessToken, driveId, "", "Tenders");
+
+  // Then the tender's own folder inside it, e.g.
+  // "Tenders/GDOH-2026-114 - Bulk Diesel Supply".
+  const tenderFolderName = `${tenderRef} - ${tenderTitle}`;
+  const tenderFolder = await ensureFolder(accessToken, driveId, "Tenders", tenderFolderName);
+
+  // Then the standard subfolders inside the tender's own folder.
+  const tenderFolderPath = `Tenders/${encodePathSegment(sanitiseFolderName(tenderFolderName))}`;
+  for (const subfolder of TENDER_STANDARD_SUBFOLDERS) {
+    await ensureFolder(accessToken, driveId, tenderFolderPath, subfolder);
+  }
+
+  return { folderId: tenderFolder.id, folderUrl: tenderFolder.webUrl };
+}
+
+/**
+ * Lists the contents of a specific folder (a tender's document
+ * workspace) rather than the whole document library root — used by the
+ * Tenders module's Documents tab.
+ */
+export async function listFolderContents(accessToken: string, folderId: string): Promise<SharePointFile[]> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const data = await graphFetch(
+    `/drives/${driveId}/items/${folderId}/children?$select=id,name,webUrl,size,lastModifiedDateTime,lastModifiedBy,file,folder`,
+    accessToken
+  );
+  return (data.value ?? []).map(mapDriveItem);
+}
+

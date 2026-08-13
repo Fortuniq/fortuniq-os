@@ -1,31 +1,46 @@
-# FortunIQ OS — v14 Build — RBAC Enforcement Expanded
+# FortunIQ OS — v15 Build — Tender Document Workspace (Phase 1) & SharePoint Fix
 
-The complete internal operating system for FortunIQ Fuels — the granular
-Role-Based Access Control system now has **real, backend enforcement
-across four modules**: Tenders, Documents, Academy, and Employee Hub —
-not just Tenders alone. Still backed by **175 automated tests**.
+The complete internal operating system for FortunIQ Fuels — a real,
+**critical SharePoint connectivity bug fixed** (the token refresh URL was
+malformed, silently breaking SharePoint access after about an hour on
+every session), plus **Phase 1 of the Tender Document Workspace**: every
+tender now gets its own automatically-created SharePoint folder, a
+dedicated in-app document browser, and a Submissions tab. Backed by
+**177 automated tests**.
 
 ## What's new in this build
 
-- **Documents, Academy, and Employee Hub now check specific granular
-  actions**, the same real, backend-enforced way Tenders already did —
-  not just module-level access.
-- **Employee Hub's restricted fields (banking, tax number) get their own,
-  separate layer of protection** even from someone who's been granted
-  general edit rights on People — "can edit this record" and "can see
-  this person's bank account number" are kept genuinely distinct
-  questions, checked independently.
-- **A privilege-escalation safeguard**: System Access & Permissions
-  itself stays Super-Admin-only no matter what granular grants someone
-  else holds — nobody can use an "Edit People" permission to grant
-  themselves or anyone else broader system access.
-- **A consistency fix**: Academy's "Manage Content" link and the page it
-  leads to now use the exact same permission check — previously the link
-  could show for someone the page itself would then block.
-- **An honest update to the scope note**: Finance, Operations, Customers,
-  and Sales still have no Add/Edit forms at all (a separate, earlier gap
-  — see `docs/EMPLOYEE_HUB.md`), so there's nothing yet to wire RBAC into
-  there. See `docs/RBAC.md` for the full, current picture.
+- **Fixed a real, live SharePoint bug**: the Microsoft Graph token
+  refresh URL was malformed (a duplicated `/v2.0/` segment), causing
+  every refresh attempt to silently fail with a 404 — meaning SharePoint
+  access broke about an hour into every session, with no clear error
+  shown anywhere. Fixed, with a permanent regression test
+  (`src/lib/auth-url-construction.test.ts`) so this specific mistake
+  can't quietly return.
+- **Every tender now gets its own SharePoint folder automatically**,
+  named `Tenders/{ref} - {title}`, with five standard subfolders —
+  created using the Tender Administrator's own Microsoft permissions,
+  never blocking tender creation if it fails.
+- **A real document workspace per tender** at `/tenders/[id]`: Overview,
+  Compliance, Documents, and Submissions tabs. The folder icon in the
+  Tender Register opens this directly.
+- **The Documents tab** browses that specific tender's SharePoint folder
+  in-app via Microsoft Graph, with an "Open in SharePoint" button that
+  goes to that tender's specific folder — never the general library.
+- **The Submissions tab**: Submission Method (Online/Hand Delivery) and
+  Submission Date/Time, per tender.
+- **A genuinely per-tender checklist**, linked by `tender_id` — replacing
+  the old single example checklist shared across every tender.
+- **An honest scope note**: automatic compliance calculation and
+  AI-generated checklists are the next phases, not yet built — see
+  `docs/TENDER_WORKSPACE.md`.
+
+## Previous build (v14): RBAC Enforcement Expanded
+
+Real, backend-enforced granular permissions extended across Tenders,
+Documents, Academy, and Employee Hub — not just module-level access,
+including a privilege-escalation safeguard on System Access & Permissions
+itself and separate protection on Employee Hub's restricted fields.
 
 ## Previous build (v13): Role-Based Access Control (RBAC)
 

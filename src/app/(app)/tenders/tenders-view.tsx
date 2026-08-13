@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive, Plus, Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive, Plus, Pencil, Trash2, FolderOpen } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
@@ -59,6 +60,14 @@ export function TendersView({ tenders, checklist, canManage }: { tenders: Tender
           </div>
           <span className="text-xs text-grey w-8">{r.compliance}%</span>
         </div>
+      ),
+    },
+    {
+      key: "workspace", header: "", align: "right" as const,
+      render: (r: Tender) => (
+        <Link href={`/tenders/${r.id}`} className="text-grey hover:text-orange transition-colors inline-block" title="Open document workspace">
+          <FolderOpen className="w-3.5 h-3.5" />
+        </Link>
       ),
     },
     ...(canManage ? [{
