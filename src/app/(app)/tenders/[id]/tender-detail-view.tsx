@@ -196,9 +196,12 @@ function DocumentsTab({ tender, canEdit, sharePointConfigured }: { tender: Tende
 
   async function handleCreateFolder() {
     setCreating(true);
+    setError(null);
     try {
       await retryTenderFolderCreation(tender.id, tender.ref, tender.title);
       window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't create the SharePoint folder.");
     } finally {
       setCreating(false);
     }
@@ -231,6 +234,11 @@ function DocumentsTab({ tender, canEdit, sharePointConfigured }: { tender: Tende
             >
               {creating ? "Creating…" : "Create SharePoint Folder"}
             </button>
+          )}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2 mt-4 text-left">
+              {error}
+            </div>
           )}
         </CardBody>
       </Card>
