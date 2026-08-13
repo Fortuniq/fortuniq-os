@@ -156,28 +156,28 @@ export async function updateSubmissionInfo(tenderId: string, formData: FormData)
 }
 
 // ---------- DOCUMENT WORKSPACE: retry folder creation if it failed initially ----------
-export async function retryTenderFolderCreation(tenderId: string, ref: string, title: string) {
+export async function retryTenderFolderCreation(tenderId: string, ref: string, title: string): Promise<{ error?: string }> {
   const permissions = await requirePermissionAction("tenders", "Edit");
-  if (!isSharePointConfigured) throw new Error("SharePoint isn't connected yet.");
+  // Deliberately RETURNED, not thrown, all the way through this
+  // function. Next.js redacts thrown Server Action errors down to a
+  // generic, unhelpful message on the client in production (only a
+  // "digest" survives) — even a clean, human-written Error gets
+  // stripped this way. Returning the error as normal data instead
+  // completely sidesteps that redaction, so the real reason always
+  // reaches the person using the app, not just the server logs.
+  if (!isSharePointConfigured) return { error: "SharePoint isn't connected yet." };
   const session = await auth();
-  if (!session?.accessToken) throw new Error("Your Microsoft session needs refreshing — try signing out and back in.");
+  if (!session?.accessToken) return { error: "Your Microsoft session needs refreshing — try signing out and back in." };
 
   const supabase = createServiceClient();
 
-  // Wrapped deliberately: ensureTenderFolder can throw a GraphError or a
-  // raw fetch/network error, and letting either escape a Server Action
-  // unaltered gets redacted by Next.js's production error handling into
-  // an unhelpful generic message on the client (a minified React error
-  // number, not the real reason). Logging the real error here — visible
-  // in Netlify's function logs — and re-throwing a guaranteed plain,
-  // readable Error keeps the actual diagnosis available either way.
   let folder: { folderId: string; folderUrl: string };
   try {
     folder = await ensureTenderFolder(session.accessToken as string, ref, title);
   } catch (err) {
-    console.error("retryTenderFolderCreation: ensureTenderFolder failed:", err instanceof Error ? err.message : err);
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(`Couldn't create the SharePoint folder: ${detail}`);
+    console.error("retryTenderFolderCreation: ensureTenderFolder failed:", detail);
+    return { error: `Couldn't create the SharePoint folder: ${detail}` };
   }
 
   await supabase.from("tenders").update({
@@ -190,4 +190,5 @@ export async function retryTenderFolderCreation(tenderId: string, ref: string, t
     targetType: "tender", targetId: tenderId, metadata: { field: "sharepoint_folder_created_retry" },
   });
   revalidatePath(`/tenders/${tenderId}`);
+  return {};
 }

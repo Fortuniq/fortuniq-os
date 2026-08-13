@@ -8,18 +8,25 @@ import { logAudit } from "@/lib/audit";
 const CANONICAL_URL = process.env.AUTH_URL || "https://fortuniq-os.netlify.app";
 
 // Scopes requested at sign-in. Beyond basic sign-in (openid/profile/email/
-// User.Read), this now also asks for read access to SharePoint files and
-// sites — required for the Documents module to work as a real SharePoint-
-// backed system. "offline_access" is what lets us silently refresh access
-// without asking the person to sign in again every hour.
+// User.Read), this asks for both read AND write access to SharePoint
+// files and sites — read alone is enough for browsing and previewing
+// existing documents, but write access is required for anything that
+// creates or modifies content, like a tender's dedicated SharePoint
+// folder being created automatically. Using .Read.All here (rather than
+// .ReadWrite.All) would make every write operation fail with a 403
+// "accessDenied" from Graph, even though sign-in and read access work
+// perfectly — a real, easy-to-miss trap, since nothing else about the
+// connection looks broken when this happens. "offline_access" is what
+// lets us silently refresh access without asking the person to sign in
+// again every hour.
 const SCOPES = [
   "openid",
   "profile",
   "email",
   "offline_access",
   "User.Read",
-  "Files.Read.All",
-  "Sites.Read.All",
+  "Files.ReadWrite.All",
+  "Sites.ReadWrite.All",
 ].join(" ");
 
 type JWTWithGraphToken = {

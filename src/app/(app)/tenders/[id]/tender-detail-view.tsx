@@ -198,9 +198,17 @@ function DocumentsTab({ tender, canEdit, sharePointConfigured }: { tender: Tende
     setCreating(true);
     setError(null);
     try {
-      await retryTenderFolderCreation(tender.id, tender.ref, tender.title);
-      window.location.reload();
+      const result = await retryTenderFolderCreation(tender.id, tender.ref, tender.title);
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        window.location.reload();
+      }
     } catch (err) {
+      // Should be rare now that retryTenderFolderCreation returns its
+      // errors instead of throwing them — this only catches something
+      // genuinely unexpected (e.g. a network failure reaching the server
+      // at all), not the normal SharePoint/Graph failure paths.
       setError(err instanceof Error ? err.message : "Couldn't create the SharePoint folder.");
     } finally {
       setCreating(false);

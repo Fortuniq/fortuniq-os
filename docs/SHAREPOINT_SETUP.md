@@ -28,12 +28,31 @@ adding to that same registration, not creating a new one.
 3. Click **+ Add a permission**
 4. Choose **Microsoft Graph**
 5. Choose **Delegated permissions**
-6. Search for and tick: **Files.Read.All**
-7. Search for and tick: **Sites.Read.All**
+6. Search for and tick: **Files.ReadWrite.All**
+7. Search for and tick: **Sites.ReadWrite.All**
 8. Click **Add permissions**
-9. You'll now see a yellow banner about admin consent — click **Grant admin
+9. If you had the older **Files.Read.All** / **Sites.Read.All**
+   (read-only) permissions from an earlier setup, remove them now — the
+   ReadWrite versions above fully replace them, and having both isn't
+   necessary.
+10. You'll now see a yellow banner about admin consent — click **Grant admin
    consent for [your organisation]**, then confirm. Since you're a Global
    Administrator, this works in one click.
+
+**Read vs. ReadWrite matters here, specifically.** Read-only permissions
+are enough for browsing and previewing documents, but anything that
+*creates or changes* something in SharePoint — like a tender's dedicated
+folder being created automatically — needs write access. Using the
+read-only permissions produces a **403 "accessDenied" error specifically
+on write operations**, while sign-in and everything else continues to work
+completely normally — which makes it a genuinely easy thing to miss, since
+nothing else about the connection looks broken.
+
+**If you're updating an existing setup that already had the read-only
+permissions**: after granting the new ones and consenting above, everyone
+who's already signed in — including you — needs to **sign out completely
+and sign back in** before the new permissions actually take effect. Adding
+a permission here doesn't retroactively upgrade anyone's current session.
 
 ## Step 2 — Decide which SharePoint site holds your documents
 
