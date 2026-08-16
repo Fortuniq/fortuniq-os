@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive, Plus, Pencil, Trash2, FolderOpen } from "lucide-react";
+import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive, Plus, Pencil, Trash2, FolderOpen, Inbox } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
@@ -25,6 +25,9 @@ type Tender = {
 };
 
 type ChecklistItem = { item: string; done: boolean };
+
+const TENDER_BOX_URL =
+  "https://iqfuels.sharepoint.com/:f:/s/FortunIQDocuments/IgBnsyJtiKwQTIqoz7J5F-u3ASuq5RRrYVK1mu13szDkpeA?e=h5XHOL";
 
 export function TendersView({ tenders, checklist, canManage }: { tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean }) {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -92,11 +95,24 @@ export function TendersView({ tenders, checklist, canManage }: { tenders: Tender
       <PageHeader
         title="Tenders"
         description="Register, compliance tracking, and AI-assisted review for every bid."
-        action={canManage ? (
-          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-2 rounded-lg hover:bg-orange transition-colors">
-            <Plus className="w-3.5 h-3.5" /> Add Tender
-          </button>
-        ) : undefined}
+        action={
+          <div className="flex items-center gap-2">
+            <a
+              href={TENDER_BOX_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs font-semibold text-navy bg-white border border-border px-3 py-2 rounded-lg hover:border-orange hover:text-orange transition-colors"
+              title="Open the Tender Box SharePoint folder"
+            >
+              <Inbox className="w-3.5 h-3.5" /> Tender Box
+            </a>
+            {canManage && (
+              <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-2 rounded-lg hover:bg-orange transition-colors">
+                <Plus className="w-3.5 h-3.5" /> Add Tender
+              </button>
+            )}
+          </div>
+        }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
