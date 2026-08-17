@@ -184,12 +184,12 @@ describe("Full role x module matrix (exact match against documented table)", () 
   // This mirrors the table in docs/ROLES_AND_PERMISSIONS.md exactly — if
   // you change one, change the other, and re-run this test.
   const EXPECTED: Record<RoleKey, Record<ModuleKey, boolean>> = {
-    "Super Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: true },
-    "Management": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false },
-    "HR/Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: true },
-    "Finance": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: true, operations: false, customers: false, sales: false, reports: true, ai: true, settings: true, audit: false },
-    "Sales/Marketing": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false },
-    "Employee": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: false },
+    "Super Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: true, attendance: true },
+    "Management": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false, attendance: false },
+    "HR/Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: true, attendance: true },
+    "Finance": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: true, operations: false, customers: false, sales: false, reports: true, ai: true, settings: true, audit: false, attendance: false },
+    "Sales/Marketing": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false, attendance: false },
+    "Employee": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: false, attendance: false },
   };
 
   for (const role of ALL_ROLES) {

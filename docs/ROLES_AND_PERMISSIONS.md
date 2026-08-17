@@ -23,9 +23,17 @@ an exception (the "Fine-tune" option next to their name).
 | AI Assistant | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Settings | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Audit Logs | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Attendance | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Team Management | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 This exact table is also encoded as an automated test — see "Testing" below.
+
+**Attendance note**: the "Attendance" row above governs the HR
+Attendance Register page (`/attendance` — viewing everyone's records,
+reviewing correction requests). It does NOT govern Clock In/Clock Out
+for yourself — that's available to every employee regardless of this
+module grant, since it's a personal action, not an HR privilege. See
+`docs/ATTENDANCE.md`.
 
 ## The reasoning behind each role
 
