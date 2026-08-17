@@ -11,6 +11,28 @@ import { createTaskForEmployee } from "@/lib/tasks";
 import { createCalendarEventForEmployee } from "@/lib/calendar";
 import Anthropic from "@anthropic-ai/sdk";
 
+/**
+ * Parses and validates the Tender Value field server-side — this is the
+ * real enforcement point, not the HTML input's min/step attributes
+ * (which are just a UX nicety and were previously mis-set to step=1000,
+ * blocking any non-round-thousand value). Rejects negative values and
+ * non-numeric input with a clear error rather than silently coercing to
+ * 0. Empty input is treated as 0 since the field isn't marked mandatory
+ * in the form; values are normalised to two decimal places (cent
+ * precision) to match the numeric(14,2) database column — this is
+ * rounding to the cent, not to any coarser increment, so 12567.899
+ * becomes 12567.90 but 12567.90 itself is stored exactly as entered.
+ * See docs/TENDER_VALUE.md.
+ */
+function parseTenderValue(formData: FormData): number {
+  const raw = String(formData.get("value") ?? "").trim();
+  if (raw === "") return 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) throw new Error("Tender value must be a valid number.");
+  if (parsed < 0) throw new Error("Tender value cannot be negative.");
+  return Math.round(parsed * 100) / 100;
+}
+
 export async function addTender(formData: FormData) {
   // Real, backend-enforced RBAC — not just a hidden button. Someone with
   // Tenders module access but no "Create" action granted (e.g. a Sales
@@ -22,6 +44,10 @@ export async function addTender(formData: FormData) {
   const ref = String(formData.get("ref") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   if (!ref || !title) throw new Error("A reference number and title are required.");
+
+  // Validate before any side effects (SharePoint folder creation, DB
+  // writes) so a bad value never leaves a half-created tender behind.
+  const tenderValue = parseTenderValue(formData);
 
   // Best-effort: create the tender's dedicated SharePoint folder (with
   // standard subfolders) using the CURRENT PERSON'S OWN Microsoft
@@ -57,7 +83,7 @@ export async function addTender(formData: FormData) {
     closing_date: closingDate,
     status: String(formData.get("status") ?? "Open"),
     stage: String(formData.get("stage") ?? "").trim() || null,
-    value: Number(formData.get("value") ?? 0),
+    value: tenderValue,
     compliance: Number(formData.get("compliance") ?? 0),
     sharepoint_folder_id: sharepointFolderId,
     sharepoint_folder_url: sharepointFolderUrl,
@@ -116,7 +142,7 @@ export async function updateTender(tenderId: string, formData: FormData) {
     closing_date: String(formData.get("closingDate") ?? ""),
     status: String(formData.get("status") ?? "Open"),
     stage: String(formData.get("stage") ?? "").trim() || null,
-    value: Number(formData.get("value") ?? 0),
+    value: parseTenderValue(formData),
     compliance: Number(formData.get("compliance") ?? 0),
   }).eq("id", tenderId);
 

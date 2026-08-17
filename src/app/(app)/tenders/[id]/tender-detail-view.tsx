@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Badge, statusTone } from "@/components/ui/Badge";
-import { formatDate, formatZAR } from "@/lib/format";
+import { formatDate, formatZARFull } from "@/lib/format";
 import type { TenderDetail } from "@/lib/data";
 import {
   toggleChecklistItem, addChecklistItem, deleteChecklistItem,
@@ -85,7 +85,7 @@ function OverviewTab({ tender }: { tender: TenderDetail }) {
         <InfoRow label="Closing Date" value={formatDate(tender.closing)} />
         <InfoRow label="Status" value={tender.status} />
         <InfoRow label="Stage" value={tender.stage} />
-        <InfoRow label="Value" value={formatZAR(tender.value)} />
+        <InfoRow label="Value" value={formatZARFull(tender.value)} />
         <InfoRow label="Compliance" value={`${tender.compliance}%`} />
       </CardBody>
     </Card>

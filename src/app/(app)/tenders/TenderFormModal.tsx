@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { addTender, updateTender } from "./tender-actions";
+import { formatZARFull } from "@/lib/format";
 
 type Tender = {
   id: string | number;
@@ -19,6 +20,10 @@ export function TenderFormModal({ tender, onClose }: { tender?: Tender; onClose:
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [folderWarning, setFolderWarning] = useState<string | null>(null);
+  // Raw, unformatted while editing — matches how the value is actually
+  // typed (458.65, 387958, 4200000). Only ever formatted for display,
+  // never for what gets submitted or stored. See docs/TENDER_VALUE.md.
+  const [valueInput, setValueInput] = useState<string>(tender?.value != null ? String(tender.value) : "");
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -113,7 +118,20 @@ export function TenderFormModal({ tender, onClose }: { tender?: Tender; onClose:
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-grey block mb-1">Value (ZAR)</label>
-              <input name="value" type="number" min={0} step={1000} defaultValue={tender?.value} placeholder="4200000" className="w-full text-sm px-3 py-2 rounded-lg border border-border" />
+              <input
+                name="value"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={valueInput}
+                onChange={(e) => setValueInput(e.target.value)}
+                placeholder="4200000"
+                className="w-full text-sm px-3 py-2 rounded-lg border border-border"
+              />
+              {valueInput !== "" && !isNaN(Number(valueInput)) && Number(valueInput) >= 0 && (
+                <p className="text-xs text-light-grey mt-1">{formatZARFull(Number(valueInput))}</p>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-grey block mb-1">Compliance %</label>
