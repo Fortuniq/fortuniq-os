@@ -443,3 +443,125 @@ export async function upsertAttendanceListItem(
   return created.id as string;
 }
 
+// =========================================================================
+// ENTERPRISE DOCUMENT CONTROL SYSTEM
+// =========================================================================
+// See docs/DOCUMENT_CONTROL.md for the full design. This section adds
+// the three capabilities the rest of the app didn't have yet: creating
+// the FortunIQ Documents library's folder structure, uploading a file
+// into it, and moving a file (used to archive a superseded version).
+// Everything else (list/search/preview/native version history) already
+// existed above and is reused as-is.
+
+/**
+ * The top-level category folders inside "FortunIQ Documents" — mirrors
+ * the structure requested for the document control system exactly.
+ * "Archive" is created too, but is never offered as a place to file a
+ * NEW document — see ensureCategoryFolder(), which rejects it.
+ */
+export const DOCUMENT_LIBRARY_ROOT = "FortunIQ Documents";
+
+export const DOCUMENT_CATEGORIES = [
+  "Policies", "SOPs", "Legal", "Brand", "Certificates", "Licences", "Tax",
+  "Insurance", "Company Profile", "Marketing", "Finance", "Operations",
+  "HR", "Templates",
+] as const;
+
+export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
+
+const ARCHIVE_FOLDER_NAME = "Archive";
+
+/**
+ * Creates the full "FortunIQ Documents" library structure — the root
+ * folder, every category subfolder, and the Archive folder (with a
+ * mirrored subfolder per category inside it, so archived versions stay
+ * organised by category too) — if any part doesn't already exist yet.
+ * Idempotent and safe to call on every "Attach Document" action; the
+ * underlying ensureFolder() is a no-op for anything already there.
+ */
+export async function ensureDocumentLibraryStructure(accessToken: string): Promise<void> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  await ensureFolder(accessToken, driveId, "", DOCUMENT_LIBRARY_ROOT);
+  for (const category of DOCUMENT_CATEGORIES) {
+    await ensureFolder(accessToken, driveId, DOCUMENT_LIBRARY_ROOT, category);
+  }
+  const archiveRoot = await ensureFolder(accessToken, driveId, DOCUMENT_LIBRARY_ROOT, ARCHIVE_FOLDER_NAME);
+  const archivePath = `${DOCUMENT_LIBRARY_ROOT}/${encodePathSegment(sanitiseFolderName(ARCHIVE_FOLDER_NAME))}`;
+  for (const category of DOCUMENT_CATEGORIES) {
+    await ensureFolder(accessToken, driveId, archivePath, category);
+  }
+  void archiveRoot; // referenced for clarity; callers use getCategoryFolder()/getArchiveFolder() below to fetch ids when needed
+}
+
+/** Gets (creating if needed) the live folder for a given document category — where new/current versions are filed. */
+export async function getCategoryFolder(accessToken: string, category: string): Promise<{ id: string; webUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const safeCategory = DOCUMENT_CATEGORIES.includes(category as DocumentCategory) ? category : "Policies";
+  return ensureFolder(accessToken, driveId, DOCUMENT_LIBRARY_ROOT, safeCategory);
+}
+
+/** Gets (creating if needed) the Archive subfolder for a given category — where superseded versions are moved to. */
+export async function getArchiveFolder(accessToken: string, category: string): Promise<{ id: string; webUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const safeCategory = DOCUMENT_CATEGORIES.includes(category as DocumentCategory) ? category : "Policies";
+  const archivePath = `${DOCUMENT_LIBRARY_ROOT}/${encodePathSegment(sanitiseFolderName(ARCHIVE_FOLDER_NAME))}`;
+  return ensureFolder(accessToken, driveId, archivePath, safeCategory);
+}
+
+/**
+ * Uploads a file's raw bytes into a specific folder using SharePoint's
+ * simple-upload endpoint. This endpoint supports files up to 4MB — the
+ * overwhelming majority of policy/SOP/certificate/licence documents.
+ * Larger files (e.g. a lengthy scanned contract) would need a resumable
+ * upload session instead; that's a known, documented limitation rather
+ * than a silent failure — see docs/DOCUMENT_CONTROL.md, "Upload size
+ * limit," and the friendly error uploadNewDocumentVersion() raises when
+ * this is hit.
+ */
+export async function uploadFileToFolder(
+  accessToken: string,
+  folderId: string,
+  fileName: string,
+  bytes: ArrayBuffer,
+  contentType: string
+): Promise<SharePointFile> {
+  if (bytes.byteLength > 4 * 1024 * 1024) {
+    throw new GraphError("File is larger than 4MB — SharePoint simple upload doesn't support this yet in FortunIQ OS.", 413);
+  }
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const safeName = sanitiseFolderName(fileName);
+  const data = await graphFetch(
+    `/drives/${driveId}/items/${folderId}:/${encodePathSegment(safeName)}:/content`,
+    accessToken,
+    { method: "PUT", headers: { "Content-Type": contentType || "application/octet-stream" }, body: bytes }
+  );
+  return mapDriveItem(data);
+}
+
+/**
+ * Moves a file to a different folder (used to move a superseded version
+ * into Archive) and optionally renames it in the same call — e.g.
+ * "Company Profile.docx" becomes "Company Profile v4 (superseded
+ * 2026-08-17).docx" so multiple archived versions of the same document
+ * never collide in the Archive folder. Graph preserves the item's id
+ * across a move, which is exactly what lets document_versions rows keep
+ * referencing the same sharepoint_item_id after archiving — see
+ * docs/DOCUMENT_CONTROL.md.
+ */
+export async function moveFileToFolder(
+  accessToken: string,
+  itemId: string,
+  destinationFolderId: string,
+  newName?: string
+): Promise<SharePointFile> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const body: Record<string, unknown> = { parentReference: { id: destinationFolderId } };
+  if (newName) body.name = sanitiseFolderName(newName);
+  const data = await graphFetch(`/drives/${driveId}/items/${itemId}`, accessToken, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return mapDriveItem(data);
+}
+

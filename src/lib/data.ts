@@ -246,8 +246,9 @@ export async function getLearningPaths() {
 
 export async function getDocuments() {
   const mockFallback = () => mock.documents.map((d) => ({
-    ...d, status: "Approved", sharepointItemId: null, sharepointWebUrl: null,
+    ...d, status: "Approved" as const, sharepointItemId: null, sharepointWebUrl: null,
     classification: "Internal" as const, authorizedRoles: [] as string[], authorizedEmails: [] as string[], aiExcluded: false,
+    expiryDate: null, currentVersionNumber: 1, modifiedBy: null,
   }));
   if (!supabaseConfigured) return mockFallback();
   try {
@@ -268,9 +269,37 @@ export async function getDocuments() {
       authorizedRoles: (d.authorized_roles ?? []) as string[],
       authorizedEmails: (d.authorized_emails ?? []) as string[],
       aiExcluded: !!d.ai_excluded,
+      expiryDate: (d.expiry_date as string) ?? null,
+      currentVersionNumber: (d.current_version_number as number) ?? 1,
+      modifiedBy: (d.modified_by as string) ?? null,
     }));
   } catch {
     return mockFallback();
+  }
+}
+
+/**
+ * Documents expiring within the next 30 days (or already expired) —
+ * powers the dashboard's expiry reminder card. Computed live from the
+ * stored expiry_date rather than persisted as tasks, so it's always
+ * accurate without needing a background job to keep it in sync. See
+ * docs/DOCUMENT_CONTROL.md, "Expiry reminders."
+ */
+export async function getExpiringDocuments() {
+  if (!supabaseConfigured) return [];
+  try {
+    const supabase = createServiceClient();
+    const { data } = await supabase
+      .from("documents")
+      .select("id, name, category, expiry_date, status")
+      .not("expiry_date", "is", null)
+      .order("expiry_date", { ascending: true });
+    return (data ?? []).map((d) => ({
+      id: d.id as string, name: d.name as string, category: d.category as string,
+      expiryDate: d.expiry_date as string, status: d.status as string,
+    }));
+  } catch {
+    return [];
   }
 }
 
@@ -428,11 +457,12 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
     permissions.email ? getMyAttendanceHistory(permissions.email, 5) : Promise.resolve([]),
+    hasModuleAccess(permissions, "documents") ? getExpiringDocuments() : Promise.resolve([]),
   ]);
 
   const taskGroups = groupMyTasks(myTasks);
@@ -473,6 +503,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     myEvents,
     attendanceToday,
     attendanceHistory,
+    expiringDocuments,
     workflowByModule: Object.fromEntries(workflowByModule),
     moduleCards,
     hasBroadVisibility,

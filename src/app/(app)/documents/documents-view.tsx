@@ -1,14 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { FileText, Download, History, Search, X, ExternalLink, FolderSync, CheckCircle2, Loader2 } from "lucide-react";
+import { useState, useMemo } from "react";
+import { FileText, Download, Search, X, ExternalLink, FolderSync, CheckCircle2, Loader2, Paperclip, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { formatDate } from "@/lib/format";
-import { catalogueSharePointFile, updateDocumentStatus, updateDocumentClassification } from "./document-actions";
-import type { SharePointFile, SharePointVersion } from "@/lib/graph";
+import { catalogueSharePointFile, updateDocumentClassification, deleteDocumentRecord } from "./document-actions";
+import { DocumentLinkModal } from "./DocumentLinkModal";
+import { VersionHistoryModal } from "./VersionHistoryModal";
+import { DocumentWorkflowControl } from "./DocumentWorkflowControl";
+import { ExpiryBadge } from "./ExpiryBadge";
+import { isExpiringSoon, isExpired } from "@/lib/documents-core";
+import type { SharePointFile } from "@/lib/graph";
 
 type Doc = {
   id: string | number;
@@ -24,21 +29,36 @@ type Doc = {
   authorizedRoles: string[];
   authorizedEmails: string[];
   aiExcluded: boolean;
+  expiryDate: string | null;
+  currentVersionNumber: number;
+  modifiedBy: string | null;
 };
 
 const categoryTone: Record<string, "orange" | "info" | "success" | "warning" | "neutral"> = {
-  Policy: "info", Legal: "neutral", Brand: "orange", Certificate: "success",
-  Licence: "success", Tax: "warning", Insurance: "warning", SOP: "info", "Company Profile": "neutral",
+  Policies: "info", Legal: "neutral", Brand: "orange", Certificates: "success",
+  Licences: "success", Tax: "warning", Insurance: "warning", SOPs: "info", "Company Profile": "neutral",
+  Marketing: "orange", Finance: "warning", Operations: "info", HR: "neutral", Templates: "neutral",
 };
 
-const categories = ["All", "Policy", "SOP", "Legal", "Brand", "Certificate", "Licence", "Tax", "Insurance"];
-
-export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCreate, canEdit }: { documents: Doc[]; sharePointConfigured: boolean; isAdmin: boolean; canCreate: boolean; canEdit: boolean }) {
+export function DocumentsView({
+  documents, expiringDocuments, sharePointConfigured, isAdmin, canCreate, canEdit, canApprove, canDelete, canViewArchive, categories,
+}: {
+  documents: Doc[];
+  expiringDocuments: { id: string; name: string; category: string; expiryDate: string; status: string }[];
+  sharePointConfigured: boolean;
+  isAdmin: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canApprove: boolean;
+  canDelete: boolean;
+  canViewArchive: boolean;
+  categories: readonly string[];
+}) {
   const [manageAccessDoc, setManageAccessDoc] = useState<Doc | null>(null);
+  const [linkModalDoc, setLinkModalDoc] = useState<Doc | null>(null);
+  const [versionsDoc, setVersionsDoc] = useState<Doc | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
-  const [versions, setVersions] = useState<{ docName: string; items: SharePointVersion[] } | null>(null);
-  const [versionsLoading, setVersionsLoading] = useState<string | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [browseFiles, setBrowseFiles] = useState<SharePointFile[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
@@ -46,8 +66,19 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SharePointFile[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("All");
 
   const catalogued = new Set(documents.map((d) => d.sharepointItemId).filter(Boolean));
+
+  const relevantExpiring = useMemo(
+    () => expiringDocuments.filter((d) => isExpired(d.expiryDate) || isExpiringSoon(d.expiryDate)),
+    [expiringDocuments]
+  );
+
+  const filteredDocuments = useMemo(
+    () => (categoryFilter === "All" ? documents : documents.filter((d) => d.category === categoryFilter)),
+    [documents, categoryFilter]
+  );
 
   async function openPreview(itemId: string, name: string) {
     setPreviewLoading(itemId);
@@ -60,20 +91,6 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
       else alert(data.error);
     } finally {
       setPreviewLoading(null);
-    }
-  }
-
-  async function openVersions(itemId: string, docName: string) {
-    setVersionsLoading(itemId);
-    try {
-      const res = await fetch("/api/sharepoint/versions", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId }),
-      });
-      const data = await res.json();
-      if (res.ok) setVersions({ docName, items: data.versions });
-      else alert(data.error);
-    } finally {
-      setVersionsLoading(null);
     }
   }
 
@@ -108,6 +125,15 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
     }
   }
 
+  async function handleDelete(doc: Doc) {
+    if (!confirm(`Delete the FortunIQ OS record for "${doc.name}"? The SharePoint file itself will NOT be deleted.`)) return;
+    try {
+      await deleteDocumentRecord(String(doc.id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Couldn't delete this document.");
+    }
+  }
+
   const columns: Column<Doc>[] = [
     {
       key: "name", header: "Document",
@@ -115,29 +141,13 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-orange shrink-0" />
           <span className="font-medium">{r.name}</span>
-          {r.sharepointWebUrl && (
-            <a href={r.sharepointWebUrl} target="_blank" rel="noopener noreferrer" title="Open in SharePoint">
-              <ExternalLink className="w-3 h-3 text-light-grey hover:text-orange" />
-            </a>
-          )}
         </div>
       ),
     },
     { key: "category", header: "Category", render: (r) => <Badge tone={categoryTone[r.category] ?? "neutral"}>{r.category}</Badge> },
     {
       key: "status", header: "Status",
-      render: (r) => (
-        <select
-          value={r.status}
-          disabled={!canEdit}
-          onChange={(e) => updateDocumentStatus(String(r.id), e.target.value as "Draft" | "Approved" | "Archived")}
-          className="text-xs font-semibold rounded-full px-2 py-1 border-0 bg-transparent cursor-pointer disabled:cursor-default disabled:opacity-70"
-        >
-          <option value="Draft">Draft</option>
-          <option value="Approved">Approved</option>
-          <option value="Archived">Archived</option>
-        </select>
-      ),
+      render: (r) => <DocumentWorkflowControl documentId={String(r.id)} status={r.status} canEdit={canEdit} canApprove={canApprove} />,
     },
     {
       key: "classification", header: "Classification",
@@ -165,21 +175,30 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
         );
       },
     },
-    { key: "version", header: "Version" },
+    { key: "version", header: "Version", render: (r) => <span className="text-sm text-navy">{r.version ?? `v${r.currentVersionNumber}`}</span> },
+    { key: "expiry", header: "Expiry", render: (r) => <ExpiryBadge expiryDate={r.expiryDate} /> },
     { key: "owner", header: "Owner" },
-    { key: "updated", header: "Last Updated", render: (r) => formatDate(r.updated) },
     {
-      key: "actions", header: "", align: "right",
+      key: "updated", header: "Last Updated",
       render: (r) => (
-        <div className="flex items-center gap-2 justify-end">
+        <div>
+          <p className="text-sm">{formatDate(r.updated)}</p>
+          {r.modifiedBy && <p className="text-xs text-light-grey">by {r.modifiedBy}</p>}
+        </div>
+      ),
+    },
+    {
+      key: "linked", header: "Linked Document",
+      render: (r) => (
+        <div className="flex items-center gap-1.5 justify-end">
           {r.sharepointItemId ? (
             <>
               <button
-                onClick={() => openVersions(r.sharepointItemId!, r.name)}
-                disabled={versionsLoading === r.sharepointItemId}
-                className="p-1.5 rounded hover:bg-surface text-grey hover:text-orange transition-colors" title="Version history"
+                onClick={() => setVersionsDoc(r)}
+                className="text-xs font-medium text-grey hover:text-orange transition-colors flex items-center gap-1"
+                title="Version history"
               >
-                {versionsLoading === r.sharepointItemId ? <Loader2 className="w-4 h-4 animate-spin" /> : <History className="w-4 h-4" />}
+                📎 Linked Document
               </button>
               <button
                 onClick={() => openPreview(r.sharepointItemId!, r.name)}
@@ -188,9 +207,29 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
               >
                 {previewLoading === r.sharepointItemId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               </button>
+              {r.sharepointWebUrl && (
+                <a href={r.sharepointWebUrl} target="_blank" rel="noopener noreferrer" title="Open in SharePoint">
+                  <ExternalLink className="w-3.5 h-3.5 text-light-grey hover:text-orange" />
+                </a>
+              )}
+              <button onClick={() => setLinkModalDoc(r)} className="p-1.5 rounded hover:bg-surface text-grey hover:text-orange transition-colors" title="Manage link">
+                <Paperclip className="w-4 h-4" />
+              </button>
             </>
+          ) : canEdit ? (
+            <button
+              onClick={() => setLinkModalDoc(r)}
+              className="text-xs font-semibold text-orange hover:underline flex items-center gap-1"
+            >
+              ➕ Attach Document
+            </button>
           ) : (
             <span className="text-xs text-light-grey italic">Not linked</span>
+          )}
+          {canDelete && (
+            <button onClick={() => handleDelete(r)} className="p-1.5 rounded hover:bg-red-50 text-light-grey hover:text-red-600 transition-colors" title="Delete record">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
       ),
@@ -201,7 +240,7 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
     <div>
       <PageHeader
         title="Documents"
-        description="Policies, SOPs, templates, certificates, licences and company records — files live in SharePoint, catalogued here."
+        description="Enterprise document control — files live in SharePoint, with versioning, approval workflow, and audit trail managed here."
         action={
           sharePointConfigured && canCreate ? (
             <button onClick={openBrowse} className="flex items-center gap-2 bg-navy text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-orange transition-colors">
@@ -214,8 +253,25 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
       {!sharePointConfigured && (
         <Card className="mb-4 border-amber-200 bg-amber-50">
           <CardBody className="text-sm text-amber-800">
-            SharePoint isn&apos;t connected yet — showing catalogued document names only, without live previews or version
+            SharePoint isn&apos;t connected yet — showing catalogued document names only, without live previews, upload, or version
             history. See <span className="font-medium">docs/SHAREPOINT_SETUP.md</span> to connect it.
+          </CardBody>
+        </Card>
+      )}
+
+      {relevantExpiring.length > 0 && (
+        <Card className="mb-4 border-amber-200 bg-amber-50">
+          <CardBody>
+            <p className="text-sm font-semibold text-amber-800 flex items-center gap-1.5 mb-2">
+              <AlertTriangle className="w-4 h-4" /> {relevantExpiring.length} document{relevantExpiring.length === 1 ? "" : "s"} expiring soon or expired
+            </p>
+            <div className="space-y-1">
+              {relevantExpiring.slice(0, 5).map((d) => (
+                <p key={d.id} className="text-xs text-amber-800">
+                  {d.name} ({d.category}) — <ExpiryBadge expiryDate={d.expiryDate} />
+                </p>
+              ))}
+            </div>
           </CardBody>
         </Card>
       )}
@@ -263,8 +319,12 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {categories.map((c) => (
-          <button key={c} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${c === "All" ? "bg-navy text-white border-navy" : "border-border text-grey hover:border-orange hover:text-orange"}`}>
+        {["All", ...categories, ...(canViewArchive ? ["Archive"] : [])].map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategoryFilter(c)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${categoryFilter === c ? "bg-navy text-white border-navy" : "border-border text-grey hover:border-orange hover:text-orange"}`}
+          >
             {c}
           </button>
         ))}
@@ -272,7 +332,7 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
 
       <Card>
         <CardBody className="pt-5">
-          <DataTable columns={columns} data={documents} />
+          <DataTable columns={columns} data={filteredDocuments} />
         </CardBody>
       </Card>
 
@@ -292,26 +352,21 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
         <ManageAccessModal doc={manageAccessDoc} onClose={() => setManageAccessDoc(null)} />
       )}
 
-      {versions && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6" onClick={() => setVersions(null)}>
-          <div className="bg-white rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <p className="font-semibold text-navy">Version History — {versions.docName}</p>
-              <button onClick={() => setVersions(null)}><X className="w-5 h-5 text-grey" /></button>
-            </div>
-            <div className="p-4 space-y-2 max-h-96 overflow-y-auto">
-              {versions.items.length === 0 && <p className="text-sm text-grey">No version history available.</p>}
-              {versions.items.map((v, i) => (
-                <div key={v.id} className="flex items-center justify-between py-2 border-b border-border last:border-0 text-sm">
-                  <div>
-                    <p className="text-navy font-medium">{i === 0 ? "Current version" : `Version ${versions.items.length - i}`}</p>
-                    <p className="text-xs text-light-grey">{v.modifiedBy ?? "Unknown"} · {formatDate(v.lastModifiedDateTime)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {linkModalDoc && (
+        <DocumentLinkModal
+          doc={linkModalDoc}
+          onClose={() => setLinkModalDoc(null)}
+          onOpenVersions={() => { setVersionsDoc(linkModalDoc); setLinkModalDoc(null); }}
+        />
+      )}
+
+      {versionsDoc && (
+        <VersionHistoryModal
+          documentId={String(versionsDoc.id)}
+          docName={versionsDoc.name}
+          canRestore={canEdit}
+          onClose={() => setVersionsDoc(null)}
+        />
       )}
 
       {browseOpen && (
@@ -333,12 +388,16 @@ export function DocumentsView({ documents, sharePointConfigured, isAdmin, canCre
                   {catalogued.has(f.id) ? (
                     <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium"><CheckCircle2 className="w-3.5 h-3.5" /> Catalogued</span>
                   ) : (
-                    <form action={async (formData) => { await catalogueSharePointFile(formData); setBrowseOpen(false); }}>
+                    <form action={async (formData) => { await catalogueSharePointFile(formData); setBrowseOpen(false); }} className="flex items-center gap-2">
+                      <select name="category" defaultValue="Policies" className="text-xs border border-border rounded px-1.5 py-1">
+                        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
                       <input type="hidden" name="sharepointItemId" value={f.id} />
                       <input type="hidden" name="name" value={f.name} />
                       <input type="hidden" name="webUrl" value={f.webUrl} />
-                      <input type="hidden" name="category" value="Policy" />
-                      <button type="submit" className="text-xs font-semibold text-orange hover:underline">Add to Documents</button>
+                      <button type="submit" className="text-xs font-semibold text-orange hover:underline flex items-center gap-1">
+                        <Plus className="w-3 h-3" /> Add to Documents
+                      </button>
                     </form>
                   )}
                 </div>

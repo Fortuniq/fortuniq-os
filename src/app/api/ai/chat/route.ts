@@ -69,7 +69,12 @@ async function buildSecureDocumentContext(
   accessToken?: string
 ): Promise<{ context: string; sourcesUsed: { id: string; name: string }[] }> {
   const allDocuments = await getDocuments();
-  const approved = allDocuments.filter((d) => d.status === "Approved");
+  // Published is now the true "active version of record" status (see
+  // docs/DOCUMENT_CONTROL.md's 5-state lifecycle); Approved is kept here
+  // too since a document can sit in Approved briefly before someone
+  // clicks Publish, and both represent finalised, reviewed content —
+  // Draft, Pending Approval, and Archived are never referenced.
+  const approved = allDocuments.filter((d) => d.status === "Approved" || d.status === "Published");
 
   // Layer 1: classification + role/named authorisation. Confidential and
   // Highly Confidential material is removed here, before anything else.
@@ -80,7 +85,7 @@ async function buildSecureDocumentContext(
 
   const sourcesUsed: { id: string; name: string }[] = [];
   const listing = classificationAllowed.map((d) => `- ${d.name} (${d.category}, version ${d.version})`).join("\n");
-  let context = `\n\nThe following company documents are Approved and available for reference:\n${listing}`;
+  let context = `\n\nThe following company documents are Approved or Published and available for reference:\n${listing}`;
   classificationAllowed.forEach((d) => sourcesUsed.push({ id: String(d.id), name: d.name }));
 
   // Layer 2: real-time SharePoint accessibility, per document, using the

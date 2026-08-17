@@ -12,9 +12,12 @@ import {
 import { AttendanceCard } from "./AttendanceCard";
 import { MyAttendanceHistory } from "./MyAttendanceHistory";
 import { MyTasksCard } from "./MyTasksCard";
+import { DocumentExpiryCard } from "./DocumentExpiryCard";
 import type { MyTask, TaskGroups } from "@/lib/tasks-core";
 import type { CalendarEvent } from "@/lib/calendar";
 import type { AttendanceRecord } from "@/lib/attendance-core";
+
+type ExpiringDoc = { id: string; name: string; category: string; expiryDate: string; status: string };
 
 type DashboardProps = {
   firstName: string;
@@ -26,6 +29,7 @@ type DashboardProps = {
   myEvents: CalendarEvent[];
   attendanceToday: AttendanceRecord | null;
   attendanceHistory: AttendanceRecord[];
+  expiringDocuments: ExpiringDoc[];
   workflowByModule: Record<string, number>;
   moduleCards: { key: string; label: string; href: string; taskCount: number }[];
   hasBroadVisibility: boolean;
@@ -56,7 +60,7 @@ function eventDayLabel(dateStr: string): string {
 }
 
 export function DashboardView({
-  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, workflowByModule,
+  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, workflowByModule,
   moduleCards, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   const workflowEntries = Object.entries(workflowByModule).filter(([, count]) => count > 0);
@@ -145,8 +149,9 @@ export function DashboardView({
         </Card>
       </div>
 
-      <div className="mt-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
         <MyAttendanceHistory records={attendanceHistory} />
+        <DocumentExpiryCard documents={expiringDocuments} />
       </div>
 
       {/* Relevant module cards — only modules this person is permitted to access */}
