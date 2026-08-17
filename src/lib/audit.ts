@@ -8,7 +8,11 @@ export type AuditAction =
   | "team_member_modules_changed"
   | "document_status_changed"
   | "document_catalogued"
-  | "document_previewed";
+  | "document_previewed"
+  | "clocked_in"
+  | "clocked_out"
+  | "attendance_correction_requested"
+  | "attendance_correction_reviewed";
 
 /**
  * Records an entry in the audit log. Used across the app wherever a

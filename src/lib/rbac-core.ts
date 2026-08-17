@@ -23,7 +23,7 @@ export const ALL_PERMISSION_ACTIONS: PermissionAction[] = ["View", "Create", "Ed
 export type RbacModuleKey =
   | "dashboard" | "people" | "academy" | "documents" | "tenders"
   | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings" | "audit";
+  | "ai" | "settings" | "audit" | "attendance";
 
 export const ALL_RBAC_MODULES: { key: RbacModuleKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -39,6 +39,7 @@ export const ALL_RBAC_MODULES: { key: RbacModuleKey; label: string }[] = [
   { key: "ai", label: "FortunIQ Intelligence" },
   { key: "settings", label: "Settings" },
   { key: "audit", label: "Audit Logs" },
+  { key: "attendance", label: "Attendance Management" },
 ];
 
 // A person's complete, granular permission set: which actions they hold
@@ -107,7 +108,7 @@ const VIEW_EDIT: PermissionAction[] = ["View", "Edit"];
 
 export const ROLE_TEMPLATE_PERMISSIONS: Record<RoleTemplateKey, EmployeePermissionSet> = {
   // Full unrestricted access to every module — per the brief exactly.
-  "CEO": Object.fromEntries(ALL_RBAC_MODULES.map((m) => [m.key, FULL])) as EmployeePermissionSet,
+  "CEO": Object.fromEntries(ALL_RBAC_MODULES.map((m) => [m.key, FULL])) as EmployeePermissionSet, // includes attendance
 
   // Broad oversight, not full system administration — sees and can act
   // across the business, but Manage-level control stays with CEO/Administrator.
@@ -119,7 +120,7 @@ export const ROLE_TEMPLATE_PERMISSIONS: Record<RoleTemplateKey, EmployeePermissi
 
   "HR Manager": {
     dashboard: VIEW, people: FULL, academy: FULL, documents: VIEW_CREATE_EDIT,
-    ai: VIEW, settings: VIEW,
+    ai: VIEW, settings: VIEW, attendance: FULL,
     // Deliberately no entry for finance/tenders/operations/customers/sales/reports
     // — "No access to HR confidential information unless explicitly assigned"
     // works both ways: HR Manager doesn't get commercial data by default either.
@@ -162,7 +163,7 @@ export const ROLE_TEMPLATE_PERMISSIONS: Record<RoleTemplateKey, EmployeePermissi
   "Administrator": {
     dashboard: FULL, people: FULL, academy: FULL, documents: FULL, settings: FULL,
     audit: VIEW, tenders: VIEW, finance: VIEW, operations: VIEW,
-    customers: VIEW, sales: VIEW, reports: VIEW, ai: VIEW,
+    customers: VIEW, sales: VIEW, reports: VIEW, ai: VIEW, attendance: FULL,
   },
 
   // The most restrictive template — matches the existing "Employee" role

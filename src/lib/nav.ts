@@ -12,6 +12,7 @@ import {
   Sparkles,
   Settings,
   ShieldCheck,
+  Clock,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "@/lib/permissions";
@@ -37,5 +38,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Reports", href: "/reports", key: "reports", icon: BarChart3, description: "Analytics across the business" },
   { label: "FortunIQ Intelligence", href: "/ai", key: "ai", icon: Sparkles, description: "Ask FortunIQ Intelligence anything" },
   { label: "Audit Logs", href: "/audit", key: "audit", icon: ShieldCheck, description: "Who did what, and when" },
+  { label: "Attendance", href: "/attendance", key: "attendance", icon: Clock, description: "Clock-in register, corrections & reporting" },
   { label: "Settings", href: "/settings", key: "settings", icon: Settings, description: "Org, users & integrations" },
 ];

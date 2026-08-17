@@ -329,3 +329,117 @@ export async function listFolderContents(accessToken: string, folderId: string):
   return (data.value ?? []).map(mapDriveItem);
 }
 
+// =========================================================================
+// ATTENDANCE REGISTER (SharePoint List)
+// =========================================================================
+// See docs/ATTENDANCE.md for the full storage decision. Supabase's
+// `attendance` table is the operational source of truth that Clock
+// In/Out actually reads and writes; this SharePoint List is a
+// best-effort mirror kept purely for HR's register-of-record / Excel
+// export needs, using the same delegated, per-signed-in-user Graph
+// pattern as every other function in this file. A failure here must
+// NEVER block or roll back a real Clock In/Clock Out — callers treat
+// this as fire-and-forget, same as ensureTenderFolder's folder-creation
+// step.
+//
+// IMPORTANT — list-level SharePoint permissions: creating the list via
+// Graph does not, by itself, restrict who in the organisation can open
+// it directly in SharePoint (that requires breaking permission
+// inheritance on the list, which needs a site-admin action beyond what
+// Sites.ReadWrite.All safely automates here). Restricting direct
+// SharePoint access to HR/Super Admin is a one-time manual step for a
+// site admin to perform in SharePoint's own sharing settings — see
+// docs/ATTENDANCE.md, "SharePoint list permissions." FortunIQ OS itself
+// already enforces the real access control (see requirePermissionAction
+// calls in attendance-actions.ts) regardless of that manual step.
+
+const ATTENDANCE_LIST_NAME = "Attendance Register";
+
+const ATTENDANCE_LIST_COLUMNS = [
+  { name: "EmployeeName", text: {} },
+  { name: "EmployeeEmail", text: {} },
+  { name: "Department", text: {} },
+  { name: "AttendanceDate", dateTime: { format: "dateOnly" } },
+  { name: "ClockIn", dateTime: { format: "dateTime" } },
+  { name: "ClockOut", dateTime: { format: "dateTime" } },
+  { name: "HoursWorked", text: {} },
+  { name: "Status", text: {} },
+];
+
+/**
+ * Creates the Attendance Register SharePoint List if it doesn't already
+ * exist, or returns its id if it does — idempotent, safe to call before
+ * every write, same pattern as ensureFolder() above.
+ */
+export async function ensureAttendanceList(accessToken: string): Promise<string> {
+  const { siteId } = await resolveSharePointSite(accessToken);
+
+  const existing = await graphFetch(
+    `/sites/${siteId}/lists?$filter=displayName eq '${ATTENDANCE_LIST_NAME}'`,
+    accessToken
+  );
+  if (existing.value && existing.value.length > 0) {
+    return existing.value[0].id as string;
+  }
+
+  const created = await graphFetch(`/sites/${siteId}/lists`, accessToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      displayName: ATTENDANCE_LIST_NAME,
+      list: { template: "genericList" },
+      columns: ATTENDANCE_LIST_COLUMNS,
+    }),
+  });
+  return created.id as string;
+}
+
+/** Adds one row to the Attendance Register list for a clock-in or a completed clock-out. */
+export async function upsertAttendanceListItem(
+  accessToken: string,
+  listItemId: string | null,
+  fields: {
+    employeeName: string;
+    employeeEmail: string;
+    department: string | null;
+    attendanceDate: string; // YYYY-MM-DD
+    clockIn: string | null; // ISO timestamp
+    clockOut: string | null;
+    hoursWorked: string | null;
+    status: string;
+  }
+): Promise<string> {
+  const { siteId } = await resolveSharePointSite(accessToken);
+  const listId = await ensureAttendanceList(accessToken);
+
+  const body = {
+    fields: {
+      Title: `${fields.employeeName} — ${fields.attendanceDate}`,
+      EmployeeName: fields.employeeName,
+      EmployeeEmail: fields.employeeEmail,
+      Department: fields.department ?? "",
+      AttendanceDate: fields.attendanceDate,
+      ClockIn: fields.clockIn ?? null,
+      ClockOut: fields.clockOut ?? null,
+      HoursWorked: fields.hoursWorked ?? "",
+      Status: fields.status,
+    },
+  };
+
+  if (listItemId) {
+    await graphFetch(`/sites/${siteId}/lists/${listId}/items/${listItemId}/fields`, accessToken, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body.fields),
+    });
+    return listItemId;
+  }
+
+  const created = await graphFetch(`/sites/${siteId}/lists/${listId}/items`, accessToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return created.id as string;
+}
+

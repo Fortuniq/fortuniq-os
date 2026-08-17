@@ -12,7 +12,7 @@
 export type ModuleKey =
   | "dashboard" | "people" | "academy" | "documents" | "tenders"
   | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings" | "audit";
+  | "ai" | "settings" | "audit" | "attendance";
 
 export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -28,6 +28,7 @@ export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: "ai", label: "AI Assistant" },
   { key: "settings", label: "Settings" },
   { key: "audit", label: "Audit Logs" },
+  { key: "attendance", label: "Attendance Management" },
 ];
 
 export const ALL_MODULE_KEYS = ALL_MODULES.map((m) => m.key);
@@ -39,7 +40,7 @@ export const ALL_ROLES: RoleKey[] = ["Super Admin", "Management", "HR/Admin", "F
 export const ROLE_DEFAULT_MODULES: Record<RoleKey, ModuleKey[]> = {
   "Super Admin": ALL_MODULE_KEYS,
   "Management": ["dashboard", "people", "academy", "documents", "tenders", "finance", "operations", "customers", "sales", "reports", "ai", "settings"],
-  "HR/Admin": ["dashboard", "people", "academy", "documents", "ai", "settings", "audit"],
+  "HR/Admin": ["dashboard", "people", "academy", "documents", "ai", "settings", "audit", "attendance"],
   "Finance": ["dashboard", "finance", "reports", "academy", "documents", "ai", "settings"],
   "Sales/Marketing": ["dashboard", "customers", "sales", "reports", "academy", "documents", "ai", "settings"],
   "Employee": ["dashboard", "academy", "documents", "ai", "settings"],

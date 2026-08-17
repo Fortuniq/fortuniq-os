@@ -7,6 +7,8 @@ import { logAudit } from "@/lib/audit";
 import { logAISecurityEvent } from "@/lib/ai-security";
 import { auth } from "@/auth";
 import { ensureTenderFolder, isSharePointConfigured, listFolderContents, getDocumentTextContent } from "@/lib/graph";
+import { createTaskForEmployee } from "@/lib/tasks";
+import { createCalendarEventForEmployee } from "@/lib/calendar";
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function addTender(formData: FormData) {
@@ -47,17 +49,19 @@ export async function addTender(formData: FormData) {
     }
   }
 
-  const { error } = await supabase.from("tenders").insert({
+  const closingDate = String(formData.get("closingDate") ?? "");
+
+  const { data: inserted, error } = await supabase.from("tenders").insert({
     ref,
     title,
-    closing_date: String(formData.get("closingDate") ?? ""),
+    closing_date: closingDate,
     status: String(formData.get("status") ?? "Open"),
     stage: String(formData.get("stage") ?? "").trim() || null,
     value: Number(formData.get("value") ?? 0),
     compliance: Number(formData.get("compliance") ?? 0),
     sharepoint_folder_id: sharepointFolderId,
     sharepoint_folder_url: sharepointFolderUrl,
-  });
+  }).select("id").single();
 
   if (error) throw new Error(error.message);
 
@@ -66,7 +70,39 @@ export async function addTender(formData: FormData) {
     targetType: "tender", targetLabel: `${ref} — ${title}`,
     metadata: { sharepoint_folder_created: !!sharepointFolderId },
   });
+
+  // Workflow-generated task + calendar entry — the brief's core example
+  // ("a workflow item should create/surface a task when a deadline is
+  // approaching"). Assigned to whoever registered the tender, since
+  // FortunIQ OS doesn't have a separate tender "assignee" field today —
+  // reassignment can happen through the task itself later. Best-effort:
+  // never blocks tender creation if either write fails.
+  if (permissions.email && inserted?.id && closingDate) {
+    const recordUrl = `/tenders/${inserted.id}`;
+    await createTaskForEmployee({
+      title: `Prepare submission — ${ref}: ${title}`,
+      employeeEmail: permissions.email,
+      moduleKey: "tenders",
+      recordId: inserted.id,
+      recordUrl,
+      dueDate: closingDate,
+      priority: "High",
+      workflowStage: "Documents Review",
+      createdBy: permissions.email,
+    });
+    await createCalendarEventForEmployee({
+      title: `Tender closing — ${ref}: ${title}`,
+      employeeEmail: permissions.email,
+      eventDate: closingDate,
+      eventType: "Tender Closing",
+      moduleKey: "tenders",
+      recordUrl,
+      createdBy: permissions.email,
+    });
+  }
+
   revalidatePath("/tenders");
+  revalidatePath("/dashboard");
   return { folderWarning };
 }
 

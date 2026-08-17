@@ -1,6 +1,12 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import * as mock from "@/lib/mock-data";
 import { calculateCompliancePct } from "@/lib/tender-core";
+import { hasModuleAccess, type UserPermissions } from "@/lib/permissions";
+import { getMyTasks, getOrganisationTaskStats } from "@/lib/tasks";
+import { getMyUpcomingEvents } from "@/lib/calendar";
+import { getTodayAttendance, getMyAttendanceHistory } from "@/lib/attendance";
+import { groupMyTasks } from "@/lib/tasks-core";
+import { NAV_ITEMS } from "@/lib/nav";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -14,6 +20,30 @@ import { calculateCompliancePct } from "@/lib/tender-core";
 
 const supabaseConfigured =
   !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+/**
+ * Looks up an employee record by their sign-in email — the join point
+ * between "who is signed in" (Microsoft/session email) and "which
+ * employee record this is" that My Tasks, Calendar, and Attendance all
+ * rely on. Returns null (not a mock guess) if nobody in `employees`
+ * matches, since attendance/task features need a real employee record
+ * to attach to, never a fabricated one.
+ */
+export async function getEmployeeByEmail(email: string): Promise<{ id: string; name: string; role: string; dept: string } | null> {
+  if (!supabaseConfigured) {
+    // Even without a database, let the signed-in person's own name pass
+    // through so the dashboard/attendance UI still works in mock mode.
+    return null;
+  }
+  try {
+    const supabase = createServiceClient();
+    const { data } = await supabase.from("employees").select("id, name, role, dept, email").ilike("email", email).maybeSingle();
+    if (!data) return null;
+    return { id: data.id, name: data.name, role: data.role, dept: data.dept };
+  } catch {
+    return null;
+  }
+}
 
 export async function getEmployees() {
   if (!supabaseConfigured) return mock.employees;
@@ -351,45 +381,105 @@ export async function getTenderChecklist(tenderRef = "GDOH-2026-114") {
   }
 }
 
-export async function getDashboardData() {
+/**
+ * Legacy, non-personalised dashboard data — kept only as the mock/no-DB
+ * fallback source for getPersonalisedDashboardData() below. Nothing in
+ * the app calls this directly anymore; see docs/EMPLOYEE_DASHBOARD.md.
+ */
+async function getRawDashboardData() {
   if (!supabaseConfigured) {
-    return {
-      fuelPrices: mock.fuelPrices,
-      tasks: mock.tasks,
-      notifications: mock.notifications,
-      salesTrend: mock.salesTrend,
-      stats: mock.dashboardStats,
-    };
+    return { fuelPrices: mock.fuelPrices, notifications: mock.notifications, salesTrend: mock.salesTrend, stats: mock.dashboardStats };
   }
   try {
     const supabase = createServiceClient();
-    const [fuelPricesRes, tasksRes, notifsRes] = await Promise.all([
+    const [fuelPricesRes, notifsRes] = await Promise.all([
       supabase.from("fuel_prices").select("*"),
-      supabase.from("tasks").select("*").eq("done", false).order("created_at", { ascending: false }).limit(5),
       supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(5),
     ]);
     return {
       fuelPrices: fuelPricesRes.data && fuelPricesRes.data.length > 0
         ? fuelPricesRes.data.map((f) => ({ product: f.product, price: Number(f.price), change: Number(f.change) }))
         : mock.fuelPrices,
-      tasks: tasksRes.data && tasksRes.data.length > 0
-        ? tasksRes.data.map((t) => ({ id: t.id, title: t.title, due: t.due_label, priority: t.priority, owner: t.owner }))
-        : mock.tasks,
       notifications: notifsRes.data && notifsRes.data.length > 0
         ? notifsRes.data.map((n) => ({ id: n.id, text: n.text, time: "Recently", type: n.type }))
         : mock.notifications,
-      salesTrend: mock.salesTrend, // computed/aggregated data — wire to a view once real invoices exist
-      stats: mock.dashboardStats, // computed from live tables once volume warrants materialized views
-    };
-  } catch {
-    return {
-      fuelPrices: mock.fuelPrices,
-      tasks: mock.tasks,
-      notifications: mock.notifications,
       salesTrend: mock.salesTrend,
       stats: mock.dashboardStats,
     };
+  } catch {
+    return { fuelPrices: mock.fuelPrices, notifications: mock.notifications, salesTrend: mock.salesTrend, stats: mock.dashboardStats };
   }
+}
+
+/**
+ * The personalised, permission-aware dashboard payload — see
+ * docs/EMPLOYEE_DASHBOARD.md for the full design. Every piece of data
+ * returned here has already been filtered against the SIGNED-IN
+ * PERSON'S OWN permissions before it ever reaches the page component;
+ * the dashboard view itself does no additional access filtering — it
+ * simply renders what this function decided is safe to show.
+ *
+ * Broader, organisation-wide statistics (the original dashboard's global
+ * cards/chart) are only included when the person's permissions actually
+ * grant that broader visibility (Super Admin, or explicit Management
+ * role) — everyone else gets a "my work" view built from their own
+ * tasks, calendar, and attendance, per the brief's core objective.
+ */
+export async function getPersonalisedDashboardData(permissions: UserPermissions) {
+  const raw = await getRawDashboardData();
+
+  const [myTasks, myEvents, attendanceToday, attendanceHistory] = await Promise.all([
+    getMyTasks(permissions),
+    getMyUpcomingEvents(permissions, 14),
+    permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
+    permissions.email ? getMyAttendanceHistory(permissions.email, 5) : Promise.resolve([]),
+  ]);
+
+  const taskGroups = groupMyTasks(myTasks);
+
+  // "My Workflow": counts of open tasks grouped by the module they came
+  // from — reuses the same unified task layer rather than a separate
+  // workflow-summary system, per the brief's explicit instruction to
+  // avoid duplicate task/workflow systems.
+  const workflowByModule = new Map<string, number>();
+  for (const t of myTasks) {
+    if (!t.moduleKey) continue;
+    workflowByModule.set(t.moduleKey, (workflowByModule.get(t.moduleKey) ?? 0) + 1);
+  }
+
+  const EXCLUDED_FROM_CARDS = new Set(["dashboard", "settings", "audit", "attendance", "ai"]);
+  const moduleCards = NAV_ITEMS
+    .filter((item) => !EXCLUDED_FROM_CARDS.has(item.key) && hasModuleAccess(permissions, item.key))
+    .map((item) => ({
+      key: item.key,
+      label: item.label,
+      href: item.href,
+      taskCount: workflowByModule.get(item.key) ?? 0,
+    }));
+
+  // Broader organisation visibility — explicit permission required, per
+  // the brief's "My information vs Organisation information I am
+  // authorised to view" distinction.
+  const hasBroadVisibility = permissions.isAdmin || permissions.role === "Management";
+  const orgStats = hasBroadVisibility ? await getOrganisationTaskStats() : null;
+
+  return {
+    firstName: permissions.name?.split(" ")[0] ?? "there",
+    role: permissions.role ?? null,
+    fuelPrices: raw.fuelPrices, // operational reference data, not confidential — shown to everyone with dashboard access
+    notifications: raw.notifications, // company-wide notifications table isn't module-tagged yet — see docs/EMPLOYEE_DASHBOARD.md for the planned follow-up
+    myTasks,
+    taskGroups,
+    myEvents,
+    attendanceToday,
+    attendanceHistory,
+    workflowByModule: Object.fromEntries(workflowByModule),
+    moduleCards,
+    hasBroadVisibility,
+    orgStats,
+    salesTrend: hasBroadVisibility ? raw.salesTrend : null,
+    orgStatsSummary: hasBroadVisibility ? raw.stats : null,
+  };
 }
 
 export const isSupabaseConfigured = supabaseConfigured;
