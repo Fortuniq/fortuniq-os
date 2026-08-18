@@ -115,6 +115,11 @@ optional per the brief) and is idempotent.
 `compliance-status-core.ts` is entirely data-driven: standing checks
 (emergency contact, equipment) plus one entry per acknowledgement-
 required document, whatever HR has configured — nothing hard-coded.
+"Skills & Certifications Outstanding" matches the brief's own "(if
+applicable)" phrasing exactly: it only appears on the checklist at all
+when the employee has zero skills and zero certifications on file —
+once either exists, the line disappears entirely rather than sitting
+there permanently green.
 
 ## HR Document Acknowledgements widget
 
@@ -130,8 +135,15 @@ the "dashboard notification" requirement for free.
   brief marks this "optional."
 - **Email/Teams reminders** — explicitly deferred per the brief; the
   in-app task-based reminder is what's built now.
-- **RLS**: follows this app's existing established pattern (deny-all
-  RLS policies, real enforcement via the service-role client plus the
-  permissions/RBAC layer in application code) rather than writing new
-  Postgres-level policies — consistent with every other table in this
-  app so far.
+- **RLS**: `migration_v20_rls_hardening.sql` adds real, identity-scoped
+  policies (keyed on `auth.jwt() ->> 'email'`) for `employees`,
+  `documents` (employee-linked rows only), and `document_
+  acknowledgements`. They're correct but currently DORMANT: this app
+  authenticates via NextAuth + Microsoft Entra ID, not Supabase Auth, so
+  every database call today goes through the service-role key, which
+  bypasses RLS by design — the same reason every other table in this app
+  uses a deny-all placeholder. Real enforcement for "employees only see
+  their own data" lives in application code (`getEmployeeByEmail()`,
+  `canSeeInEmploymentFile()`) today. The policies are in place, ready to
+  activate the moment any code path queries Supabase with a user-context
+  client carrying an email claim.

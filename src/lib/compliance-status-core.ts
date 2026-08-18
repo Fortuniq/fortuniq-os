@@ -10,6 +10,8 @@ export type ComplianceItem = { label: string; complete: boolean };
 export type ComplianceInput = {
   hasEmergencyContact: boolean;
   equipmentIssued: boolean;
+  /** True when the employee has at least one skill or certification recorded. */
+  hasSkillsOrCertifications: boolean;
   /** One entry per document flagged acknowledgement_required for this employee, whatever it's called (Handbook, POPIA, etc). */
   requiredAcknowledgements: { label: string; acknowledged: boolean }[];
 };
@@ -20,6 +22,13 @@ export type ComplianceInput = {
  * are entirely data-driven — HR can add/remove which documents require
  * acknowledgement without any code change here, and this function will
  * just reflect whatever comes in.
+ *
+ * "Skills & Certifications Outstanding" only appears when it's actually
+ * outstanding — matching the brief's own "(if applicable)" — rather
+ * than being a permanent line item that always shows complete/
+ * incomplete. Once at least one skill or certification is on file, this
+ * line disappears from the checklist entirely, the same way the brief's
+ * own example only lists it as a caveat, not a standing green item.
  */
 export function computeComplianceStatus(input: ComplianceInput): ComplianceItem[] {
   const items: ComplianceItem[] = [
@@ -28,6 +37,9 @@ export function computeComplianceStatus(input: ComplianceInput): ComplianceItem[
   ];
   for (const ack of input.requiredAcknowledgements) {
     items.push({ label: `${ack.label} Acknowledged`, complete: ack.acknowledged });
+  }
+  if (!input.hasSkillsOrCertifications) {
+    items.push({ label: "Skills & Certifications Outstanding", complete: false });
   }
   return items;
 }

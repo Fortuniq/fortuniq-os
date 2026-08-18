@@ -103,14 +103,19 @@ export async function getMyComplianceStatus(employeeId: string, employmentFile: 
   if (!supabaseConfigured) return [];
   try {
     const supabase = createServiceClient();
-    const [{ data: employee }, { data: equipment }] = await Promise.all([
-      supabase.from("employees").select("emergency_contact").eq("id", employeeId).maybeSingle(),
+    const [{ data: employee }, { data: equipment }, { data: certifications }] = await Promise.all([
+      supabase.from("employees").select("emergency_contact, skills").eq("id", employeeId).maybeSingle(),
       supabase.from("employee_equipment").select("id").eq("employee_id", employeeId).eq("status", "Issued").limit(1),
+      supabase.from("employee_certifications").select("id").eq("employee_id", employeeId).limit(1),
     ]);
+
+    const hasSkills = Array.isArray(employee?.skills) && employee.skills.length > 0;
+    const hasCertifications = (certifications?.length ?? 0) > 0;
 
     return computeComplianceStatus({
       hasEmergencyContact: !!employee?.emergency_contact,
       equipmentIssued: (equipment?.length ?? 0) > 0,
+      hasSkillsOrCertifications: hasSkills || hasCertifications,
       requiredAcknowledgements: employmentFile
         .filter((d) => d.acknowledgementRequired)
         .map((d) => ({ label: d.name, acknowledged: d.acknowledged })),
