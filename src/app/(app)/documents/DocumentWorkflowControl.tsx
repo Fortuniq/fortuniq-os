@@ -26,13 +26,10 @@ export function DocumentWorkflowControl({
   const [isPending, startTransition] = useTransition();
   const s = status as Status;
 
-  function run(fn: () => Promise<void>) {
+  function run(fn: () => Promise<{ error?: string }>) {
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (e) {
-        alert(e instanceof Error ? e.message : "Something went wrong.");
-      }
+      const result = await fn();
+      if (result?.error) alert(result.error);
     });
   }
 

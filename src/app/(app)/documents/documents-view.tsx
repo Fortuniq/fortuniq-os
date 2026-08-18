@@ -127,11 +127,8 @@ export function DocumentsView({
 
   async function handleDelete(doc: Doc) {
     if (!confirm(`Delete the FortunIQ OS record for "${doc.name}"? The SharePoint file itself will NOT be deleted.`)) return;
-    try {
-      await deleteDocumentRecord(String(doc.id));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't delete this document.");
-    }
+    const result = await deleteDocumentRecord(String(doc.id));
+    if (result?.error) alert(result.error);
   }
 
   const columns: Column<Doc>[] = [
@@ -388,7 +385,7 @@ export function DocumentsView({
                   {catalogued.has(f.id) ? (
                     <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium"><CheckCircle2 className="w-3.5 h-3.5" /> Catalogued</span>
                   ) : (
-                    <form action={async (formData) => { await catalogueSharePointFile(formData); setBrowseOpen(false); }} className="flex items-center gap-2">
+                    <form action={async (formData) => { const result = await catalogueSharePointFile(formData); if (result?.error) alert(result.error); else setBrowseOpen(false); }} className="flex items-center gap-2">
                       <select name="category" defaultValue="Policies" className="text-xs border border-border rounded px-1.5 py-1">
                         {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
@@ -433,10 +430,9 @@ function ManageAccessModal({ doc, onClose }: { doc: Doc; onClose: () => void }) 
     setSaving(true);
     try {
       const emailList = emails.split(",").map((e) => e.trim()).filter(Boolean);
-      await updateDocumentClassification(String(doc.id), classification, roles, emailList, aiExcluded);
-      onClose();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Something went wrong.");
+      const result = await updateDocumentClassification(String(doc.id), classification, roles, emailList, aiExcluded);
+      if (result?.error) alert(result.error);
+      else onClose();
     } finally {
       setSaving(false);
     }

@@ -40,21 +40,19 @@ export function DocumentLinkModal({ doc, onClose, onOpenVersions }: { doc: Doc; 
   function linkPicked(file: SharePointFile) {
     setError(null);
     startTransition(async () => {
-      try {
-        if (replaceMode) {
-          const fd = new FormData();
-          fd.set("documentId", String(doc.id));
-          fd.set("mode", "existing");
-          fd.set("sharepointItemId", file.id);
-          fd.set("webUrl", file.webUrl);
-          await replaceDocumentVersion(fd);
-        } else {
-          await linkDocumentToFile({ documentId: String(doc.id), sharepointItemId: file.id, sharepointWebUrl: file.webUrl });
-        }
-        onClose();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Something went wrong.");
+      let result: { error?: string };
+      if (replaceMode) {
+        const fd = new FormData();
+        fd.set("documentId", String(doc.id));
+        fd.set("mode", "existing");
+        fd.set("sharepointItemId", file.id);
+        fd.set("webUrl", file.webUrl);
+        result = await replaceDocumentVersion(fd);
+      } else {
+        result = await linkDocumentToFile({ documentId: String(doc.id), sharepointItemId: file.id, sharepointWebUrl: file.webUrl });
       }
+      if (result?.error) setError(result.error);
+      else onClose();
     });
   }
 
@@ -62,29 +60,24 @@ export function DocumentLinkModal({ doc, onClose, onOpenVersions }: { doc: Doc; 
     setError(null);
     formData.set("documentId", String(doc.id));
     startTransition(async () => {
-      try {
-        if (replaceMode) {
-          formData.set("mode", "upload");
-          await replaceDocumentVersion(formData);
-        } else {
-          await uploadAndLinkDocument(formData);
-        }
-        onClose();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Something went wrong.");
+      let result: { error?: string };
+      if (replaceMode) {
+        formData.set("mode", "upload");
+        result = await replaceDocumentVersion(formData);
+      } else {
+        result = await uploadAndLinkDocument(formData);
       }
+      if (result?.error) setError(result.error);
+      else onClose();
     });
   }
 
   function handleRemove() {
     setError(null);
     startTransition(async () => {
-      try {
-        await removeDocumentLink(String(doc.id));
-        onClose();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Something went wrong.");
-      }
+      const result = await removeDocumentLink(String(doc.id));
+      if (result?.error) setError(result.error);
+      else onClose();
     });
   }
 

@@ -20,12 +20,9 @@ export function VersionHistoryModal({
   function handleRestore(versionId: string) {
     setError(null);
     startTransition(async () => {
-      try {
-        await restoreDocumentVersion(documentId, versionId);
-        onClose();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Couldn't restore that version.");
-      }
+      const result = await restoreDocumentVersion(documentId, versionId);
+      if (result?.error) setError(result.error);
+      else onClose();
     });
   }
 
