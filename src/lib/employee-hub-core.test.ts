@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canViewRestrictedEmployeeField, isOwnEmployeeRecord } from "./employee-hub-core";
+import { canViewRestrictedEmployeeField, isOwnEmployeeRecord, canSeeInEmploymentFile, canManagerViewByVisibility } from "./employee-hub-core";
 import type { UserPermissions, RoleKey } from "./permissions-core";
 
 function activeUser(role: RoleKey, email = "test@iqfuels.co.za"): UserPermissions {
@@ -77,5 +77,64 @@ describe("isOwnEmployeeRecord", () => {
     const user = activeUser("Employee", "me@iqfuels.co.za");
     expect(isOwnEmployeeRecord(user, null)).toBe(false);
     expect(isOwnEmployeeRecord(user, undefined)).toBe(false);
+  });
+});
+
+describe("canSeeInEmploymentFile", () => {
+  it("shows a Published, Employee Visible document to its own employee", () => {
+    expect(canSeeInEmploymentFile({
+      viewerEmployeeId: "emp-1", documentOwnerEmployeeId: "emp-1", visibility: "Employee Visible", status: "Published",
+    })).toBe(true);
+  });
+
+  it("hides it from a different employee, even if visible and published", () => {
+    expect(canSeeInEmploymentFile({
+      viewerEmployeeId: "emp-2", documentOwnerEmployeeId: "emp-1", visibility: "Employee Visible", status: "Published",
+    })).toBe(false);
+  });
+
+  it("hides HR Restricted / Payroll Restricted / Super Admin Only documents from the owning employee themselves", () => {
+    for (const visibility of ["HR Restricted", "Finance Restricted", "Super Admin Only"] as const) {
+      expect(canSeeInEmploymentFile({
+        viewerEmployeeId: "emp-1", documentOwnerEmployeeId: "emp-1", visibility, status: "Published",
+      })).toBe(false);
+    }
+  });
+
+  it("hides a Draft or Pending Approval document even if it's marked Employee Visible", () => {
+    expect(canSeeInEmploymentFile({
+      viewerEmployeeId: "emp-1", documentOwnerEmployeeId: "emp-1", visibility: "Employee Visible", status: "Draft",
+    })).toBe(false);
+  });
+});
+
+describe("canManagerViewByVisibility", () => {
+  it("Super Admin sees everything regardless of visibility", () => {
+    const admin = activeUser("Super Admin");
+    expect(canManagerViewByVisibility(admin, "Super Admin Only", false)).toBe(true);
+  });
+
+  it("HR/Admin sees HR Restricted but not Super Admin Only", () => {
+    const hr = activeUser("HR/Admin");
+    expect(canManagerViewByVisibility(hr, "HR Restricted", false)).toBe(true);
+    expect(canManagerViewByVisibility(hr, "Super Admin Only", false)).toBe(false);
+  });
+
+  it("Finance sees Finance Restricted, but a non-Finance non-HR person does not", () => {
+    const finance = activeUser("Finance");
+    expect(canManagerViewByVisibility(finance, "Finance Restricted", false)).toBe(true);
+    const sales = activeUser("Sales/Marketing");
+    expect(canManagerViewByVisibility(sales, "Finance Restricted", false)).toBe(false);
+  });
+
+  it("a direct manager sees Manager Visible documents but not HR Restricted ones", () => {
+    const manager = activeUser("Employee");
+    expect(canManagerViewByVisibility(manager, "Manager Visible", true)).toBe(true);
+    expect(canManagerViewByVisibility(manager, "HR Restricted", true)).toBe(false);
+  });
+
+  it("a non-manager, non-HR person never sees Manager Visible documents", () => {
+    const colleague = activeUser("Employee");
+    expect(canManagerViewByVisibility(colleague, "Manager Visible", false)).toBe(false);
   });
 });

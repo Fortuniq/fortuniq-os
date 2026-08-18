@@ -565,3 +565,66 @@ export async function moveFileToFolder(
   return mapDriveItem(data);
 }
 
+// =========================================================================
+// EMPLOYEE SELF-SERVICE — per-employee SharePoint folder
+// =========================================================================
+// See docs/EMPLOYEE_SELF_SERVICE.md. Each employee gets their own
+// folder under "FortunIQ Documents/Employees/{EMP-XXXX - Name}/", with
+// a fixed set of subfolders. Core employment documents (Contract,
+// Handbook, NDA, POPIA, Code of Conduct, Offer Letter, etc.) live
+// directly in the employee's root folder rather than a further nested
+// folder — matching the flatter structure the brief settled on.
+
+const EMPLOYEES_FOLDER_NAME = "Employees";
+
+const EMPLOYEE_SUBFOLDERS = ["Performance", "Skills & Certifications", "HR Restricted", "Payroll Restricted", "Archive"] as const;
+
+function employeeFolderName(employeeNumber: string, employeeName: string): string {
+  return sanitiseFolderName(`${employeeNumber} - ${employeeName}`);
+}
+
+/**
+ * Creates (or returns, if it already exists) an employee's SharePoint
+ * folder and its fixed subfolders. Called automatically when HR creates
+ * a new employee record — see employee-actions.ts's addEmployee(). Also
+ * safe to call again later (e.g. if a folder was somehow never created)
+ * since every step here is idempotent, same as ensureFolder() itself.
+ */
+export async function ensureEmployeeFolder(
+  accessToken: string,
+  employeeNumber: string,
+  employeeName: string
+): Promise<{ id: string; webUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  await ensureFolder(accessToken, driveId, "", DOCUMENT_LIBRARY_ROOT);
+  await ensureFolder(accessToken, driveId, DOCUMENT_LIBRARY_ROOT, EMPLOYEES_FOLDER_NAME);
+  const employeesPath = `${DOCUMENT_LIBRARY_ROOT}/${encodePathSegment(sanitiseFolderName(EMPLOYEES_FOLDER_NAME))}`;
+  const folderName = employeeFolderName(employeeNumber, employeeName);
+  const employeeFolder = await ensureFolder(accessToken, driveId, employeesPath, folderName);
+  const employeePath = `${employeesPath}/${encodePathSegment(folderName)}`;
+  for (const sub of EMPLOYEE_SUBFOLDERS) {
+    await ensureFolder(accessToken, driveId, employeePath, sub);
+  }
+  return employeeFolder;
+}
+
+/** Gets (creating if needed) a specific subfolder inside an employee's SharePoint folder — e.g. "HR Restricted" or "Archive". */
+export async function getEmployeeSubfolder(
+  accessToken: string,
+  employeeNumber: string,
+  employeeName: string,
+  subfolder: (typeof EMPLOYEE_SUBFOLDERS)[number]
+): Promise<{ id: string; webUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const employeesPath = `${DOCUMENT_LIBRARY_ROOT}/${encodePathSegment(sanitiseFolderName(EMPLOYEES_FOLDER_NAME))}`;
+  const folderName = employeeFolderName(employeeNumber, employeeName);
+  const employeePath = `${employeesPath}/${encodePathSegment(folderName)}`;
+  return ensureFolder(accessToken, driveId, employeePath, subfolder);
+}
+
+/** The employee's own root folder — where core employment documents (Contract, Handbook, NDA, etc.) are uploaded directly. */
+export async function getEmployeeRootFolder(accessToken: string, employeeNumber: string, employeeName: string): Promise<{ id: string; webUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  const employeesPath = `${DOCUMENT_LIBRARY_ROOT}/${encodePathSegment(sanitiseFolderName(EMPLOYEES_FOLDER_NAME))}`;
+  return ensureFolder(accessToken, driveId, employeesPath, employeeFolderName(employeeNumber, employeeName));
+}

@@ -56,3 +56,57 @@ export function canViewRestrictedEmployeeField(
 export function isOwnEmployeeRecord(viewer: UserPermissions, employeeEmail: string | null | undefined): boolean {
   return !!viewer.email && !!employeeEmail && viewer.email.toLowerCase() === employeeEmail.toLowerCase();
 }
+
+// =========================================================================
+// MY EMPLOYMENT FILE — document visibility
+// =========================================================================
+// See docs/EMPLOYEE_SELF_SERVICE.md. Separate question from
+// canViewRestrictedEmployeeField above: this is specifically about
+// whether an employee-linked DOCUMENT shows up in that employee's own
+// "My Employment File" list.
+
+export type DocumentVisibility = "Employee Visible" | "Manager Visible" | "HR Restricted" | "Finance Restricted" | "Super Admin Only";
+
+/**
+ * Whether a document belonging to `documentOwnerEmployeeId` should
+ * appear in the employment file the `viewer` is looking at. Only ever
+ * true when the viewer IS that employee, the document is marked
+ * "Employee Visible", AND it's the current, finalised (Published)
+ * version — matches "Employees must never know that HR Restricted,
+ * Payroll Restricted or Archive folders exist" by simply never
+ * returning anything for those.
+ */
+export function canSeeInEmploymentFile(params: {
+  viewerEmployeeId: string | null;
+  documentOwnerEmployeeId: string | null;
+  visibility: DocumentVisibility;
+  status: string;
+}): boolean {
+  if (!params.viewerEmployeeId || !params.documentOwnerEmployeeId) return false;
+  if (params.viewerEmployeeId !== params.documentOwnerEmployeeId) return false;
+  if (params.visibility !== "Employee Visible") return false;
+  return params.status === "Published" || params.status === "Approved";
+}
+
+/**
+ * Whether `viewer` (an HR/manager/finance/admin person, never the
+ * employee themselves via this path — that's canSeeInEmploymentFile
+ * above) can see a document at a given visibility level on someone
+ * else's employee record — used on the HR-side Employee Profile screen.
+ */
+export function canManagerViewByVisibility(viewer: UserPermissions, visibility: DocumentVisibility, isDirectManager: boolean): boolean {
+  if (viewer.isAdmin) return true;
+  switch (visibility) {
+    case "Employee Visible":
+    case "Manager Visible":
+      return isDirectManager || viewer.role === "HR/Admin";
+    case "HR Restricted":
+      return viewer.role === "HR/Admin";
+    case "Finance Restricted":
+      return viewer.role === "HR/Admin" || viewer.role === "Finance";
+    case "Super Admin Only":
+      return false; // isAdmin already handled above
+    default:
+      return false;
+  }
+}

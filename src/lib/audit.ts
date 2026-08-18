@@ -18,6 +18,7 @@ export type AuditAction =
   | "document_deleted"
   | "document_downloaded"
   | "document_link_removed"
+  | "document_acknowledged"
   | "clocked_in"
   | "clocked_out"
   | "attendance_correction_requested"

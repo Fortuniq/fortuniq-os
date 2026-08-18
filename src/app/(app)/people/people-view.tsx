@@ -9,12 +9,21 @@ import { Badge, statusTone } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import type { EmployeeDirectoryEntry } from "@/lib/data";
 import { EmployeeFormModal } from "./EmployeeFormModal";
+import { DocumentAcknowledgementsWidget } from "./DocumentAcknowledgementsWidget";
+import type { AcknowledgementRow } from "@/lib/employee-documents";
 
 function initials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
-export function PeopleView({ employees, isAdmin }: { employees: EmployeeDirectoryEntry[]; isAdmin: boolean }) {
+export function PeopleView({
+  employees, isAdmin, isHR, acknowledgements,
+}: {
+  employees: EmployeeDirectoryEntry[];
+  isAdmin: boolean;
+  isHR: boolean;
+  acknowledgements: AcknowledgementRow[];
+}) {
   const [query, setQuery] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -66,6 +75,8 @@ export function PeopleView({ employees, isAdmin }: { employees: EmployeeDirector
         <StatCard label="Active" value={String(active)} icon={UserCheck} />
         <StatCard label="Onboarding" value={String(onboarding)} sub="Starting this month" icon={Clock} />
       </div>
+
+      {isHR && <DocumentAcknowledgementsWidget rows={acknowledgements} />}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {filtered.map((emp) => (

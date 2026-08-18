@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { auth } from "@/auth";
 import {
   ensureDocumentLibraryStructure, getCategoryFolder, getArchiveFolder,
+  getEmployeeRootFolder, getEmployeeSubfolder,
   uploadFileToFolder, moveFileToFolder, isSharePointConfigured,
 } from "@/lib/graph";
 import { recordNewVersion, archivePreviousVersion, restoreVersion, getVersionHistory } from "@/lib/document-versions";
@@ -169,6 +170,47 @@ async function fetchDocumentRow(documentId: string) {
   return data;
 }
 
+const EMPLOYEE_PERFORMANCE_CATEGORIES = ["Performance Review", "Performance"];
+const EMPLOYEE_SKILLS_CATEGORIES = ["Training Certificate", "Qualification", "Skills & Certifications"];
+
+/**
+ * Where a document's live (current-version) file should be uploaded to
+ * or read from — the general category folder for ordinary Documents
+ * Hub records, or the OWNING EMPLOYEE'S OWN folder for any document
+ * with employee_id set. Without this branch, an employee document
+ * replaced/uploaded through the shared DocumentLinkModal (reused on the
+ * HR Employee Profile screen — see EmployeeDocumentCentre.tsx) would
+ * silently fall back to the general "Policies" folder, since employee
+ * document categories ("Employment Contract", "NDA", etc.) were never
+ * part of DOCUMENT_CATEGORIES. See docs/EMPLOYEE_SELF_SERVICE.md.
+ */
+async function resolveTargetFolder(accessToken: string, doc: { employee_id: string | null; category: string }) {
+  if (doc.employee_id) {
+    const supabase = createServiceClient();
+    const { data: employee } = await supabase.from("employees").select("employee_number, name").eq("id", doc.employee_id).maybeSingle();
+    if (employee) {
+      if (EMPLOYEE_PERFORMANCE_CATEGORIES.includes(doc.category)) {
+        return getEmployeeSubfolder(accessToken, employee.employee_number, employee.name, "Performance");
+      }
+      if (EMPLOYEE_SKILLS_CATEGORIES.includes(doc.category)) {
+        return getEmployeeSubfolder(accessToken, employee.employee_number, employee.name, "Skills & Certifications");
+      }
+      return getEmployeeRootFolder(accessToken, employee.employee_number, employee.name);
+    }
+  }
+  return getCategoryFolder(accessToken, doc.category);
+}
+
+/** Same reasoning as resolveTargetFolder() above, but for where a superseded version gets archived to. */
+async function resolveArchiveFolder(accessToken: string, doc: { employee_id: string | null; category: string }) {
+  if (doc.employee_id) {
+    const supabase = createServiceClient();
+    const { data: employee } = await supabase.from("employees").select("employee_number, name").eq("id", doc.employee_id).maybeSingle();
+    if (employee) return getEmployeeSubfolder(accessToken, employee.employee_number, employee.name, "Archive");
+  }
+  return getArchiveFolder(accessToken, doc.category);
+}
+
 /**
  * One-time (but safe to call repeatedly) setup of the "FortunIQ
  * Documents" SharePoint library structure. Called automatically the
@@ -273,8 +315,8 @@ export async function uploadAndLinkDocument(formData: FormData): Promise<ActionR
     if (doc.sharepoint_item_id) return { error: "This document already has a linked file — use Replace Current Version instead." };
 
     const accessToken = await requireGraphAccessToken();
-    await ensureDocumentLibraryStructure(accessToken);
-    const folder = await getCategoryFolder(accessToken, doc.category);
+    if (!doc.employee_id) await ensureDocumentLibraryStructure(accessToken);
+    const folder = await resolveTargetFolder(accessToken, doc);
     const bytes = await file.arrayBuffer();
     const uploaded = await uploadFileToFolder(accessToken, folder.id, file.name, bytes, file.type);
 
@@ -311,7 +353,7 @@ export async function replaceDocumentVersion(formData: FormData): Promise<Action
     if (!doc.sharepoint_item_id) return { error: "This document has no current version to replace — use Attach Document instead." };
 
     const accessToken = await requireGraphAccessToken();
-    await ensureDocumentLibraryStructure(accessToken);
+    if (!doc.employee_id) await ensureDocumentLibraryStructure(accessToken);
 
     let newItemId: string;
     let newWebUrl: string;
@@ -323,14 +365,14 @@ export async function replaceDocumentVersion(formData: FormData): Promise<Action
     } else {
       const file = formData.get("file") as File | null;
       if (!file || file.size === 0) return { error: "Choose a file to upload." };
-      const folder = await getCategoryFolder(accessToken, doc.category);
+      const folder = await resolveTargetFolder(accessToken, doc);
       const bytes = await file.arrayBuffer();
       const uploaded = await uploadFileToFolder(accessToken, folder.id, file.name, bytes, file.type);
       newItemId = uploaded.id;
       newWebUrl = uploaded.webUrl;
     }
 
-    const archiveFolder = await getArchiveFolder(accessToken, doc.category);
+    const archiveFolder = await resolveArchiveFolder(accessToken, doc);
     const archivedName = archivedFileName(doc.name, doc.current_version_number ?? 1, toSATDateString(new Date()));
     const movedOld = await moveFileToFolder(accessToken, doc.sharepoint_item_id, archiveFolder.id, archivedName);
 
@@ -426,7 +468,7 @@ export async function restoreDocumentVersion(documentId: string, versionId: stri
     if (version.is_current) return { error: "That version is already the current one." };
 
     const accessToken = await requireGraphAccessToken();
-    const categoryFolder = await getCategoryFolder(accessToken, doc.category);
+    const categoryFolder = await resolveTargetFolder(accessToken, doc);
     const restored = await moveFileToFolder(accessToken, version.sharepoint_item_id, categoryFolder.id);
 
     await restoreVersion({ documentId, versionId, restoredBy: permissions.email! });

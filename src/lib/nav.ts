@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldCheck,
   Clock,
+  UserCircle,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "@/lib/permissions";
@@ -27,6 +28,11 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", key: "dashboard", icon: LayoutDashboard, description: "Company-wide overview" },
+  // "dashboard" as the key deliberately, not "people" — My Profile is
+  // available to every signed-in employee with dashboard access, same
+  // as Dashboard itself, regardless of whether they have People/Employee
+  // Hub module access. See docs/EMPLOYEE_SELF_SERVICE.md.
+  { label: "My Profile", href: "/profile", key: "dashboard", icon: UserCircle, description: "Your own employment information & documents" },
   { label: "Employee Hub", href: "/people", key: "people", icon: Users, description: "Directory, profiles & personnel records" },
   { label: "Academy", href: "/academy", key: "academy", icon: GraduationCap, description: "Training & onboarding" },
   { label: "Documents", href: "/documents", key: "documents", icon: FolderOpen, description: "Policies, SOPs & licences" },

@@ -13,6 +13,7 @@ import type { EmployeeProfile } from "@/lib/data";
 import { EmployeeFormModal } from "../EmployeeFormModal";
 import { SystemAccessPermissions } from "./SystemAccessPermissions";
 import { addEquipment, addCertification } from "../employee-actions";
+import { EmployeeDocumentCentre } from "./EmployeeDocumentCentre";
 
 function initials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -48,6 +49,8 @@ export function EmployeeProfileView({
   isOwnProfile,
   isAdmin,
   isSuperAdmin,
+  isHR,
+  documents,
   managers,
 }: {
   profile: EmployeeProfile;
@@ -55,6 +58,8 @@ export function EmployeeProfileView({
   isOwnProfile: boolean;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  isHR: boolean;
+  documents: { id: string; name: string; category: string; version: string; status: string; visibility: string; acknowledgementRequired: boolean; sharepointItemId: string | null; sharepointWebUrl: string | null; updated: string }[];
   managers: { id: string; name: string }[];
 }) {
   const [showEditForm, setShowEditForm] = useState(false);
@@ -290,9 +295,15 @@ export function EmployeeProfileView({
         )}
       </div>
 
+      {isHR && (
+        <div className="mt-4">
+          <EmployeeDocumentCentre employeeId={profile.id} documents={documents} />
+        </div>
+      )}
+
       <p className="text-[11px] text-light-grey mt-4">
-        This profile is this employee&apos;s digital personnel file. Document Centre (contracts, ID documents,
-        performance reviews, and more) is coming in the next phase of the Employee Hub — see docs/EMPLOYEE_HUB.md.
+        This profile is this employee&apos;s digital personnel file. Documents uploaded here, marked &ldquo;Employee
+        Visible,&rdquo; automatically appear in this employee&apos;s own My Profile → My Employment File.
       </p>
 
       {showEditForm && (

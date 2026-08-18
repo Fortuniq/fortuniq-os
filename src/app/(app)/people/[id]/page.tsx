@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getEmployeeProfile, getEmployeeDirectory } from "@/lib/data";
+import { getEmployeeDocuments } from "@/lib/employee-documents";
 import { requireModuleAccess, getCurrentUserPermissions } from "@/lib/permissions";
 import { checkPermissionAction } from "@/lib/rbac";
 import { canViewRestrictedEmployeeField } from "@/lib/employee-hub-core";
@@ -9,10 +10,11 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
   await requireModuleAccess("people");
   const permissions = await getCurrentUserPermissions();
   const { id } = await params;
-  const [profile, directory, canEdit] = await Promise.all([
+  const [profile, directory, canEdit, documents] = await Promise.all([
     getEmployeeProfile(id),
     getEmployeeDirectory(),
     checkPermissionAction(permissions, "people", "Edit"),
+    getEmployeeDocuments(id),
   ]);
 
   if (!profile) notFound();
@@ -45,6 +47,8 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
       // via the RBAC system it controls would be a real privilege-
       // escalation risk. See docs/RBAC.md.
       isSuperAdmin={permissions.isAdmin}
+      isHR={permissions.isAdmin || permissions.role === "HR/Admin"}
+      documents={documents}
       managers={directory.map((e) => ({ id: e.id, name: e.name }))}
     />
   );

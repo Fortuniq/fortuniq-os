@@ -23,10 +23,12 @@ export function EmployeeFormModal({
       try {
         if (employee) {
           await updateEmployee(employee.id, formData);
+          onClose();
         } else {
-          await addEmployee(formData);
+          const result = await addEmployee(formData);
+          if (result?.error) { setError(result.error); return; }
+          onClose();
         }
-        onClose();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
       }
