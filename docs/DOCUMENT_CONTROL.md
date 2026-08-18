@@ -236,6 +236,25 @@ contract) raises a clear, friendly error rather than failing silently.
 Supporting larger files would need a resumable upload session — a
 documented follow-up, not implemented in this pass.
 
+**Next.js Server Action body limit**: Next.js caps the raw request body
+of any Server Action at 1MB by default, independent of this app's own
+4MB check. Without raising that framework-level limit, any file between
+1MB and 4MB would be rejected by Next.js itself before ever reaching
+the application's size check — and on Netlify's Next.js runtime
+specifically, that rejection surfaced as a raw crash
+(`Cannot set property socket of #<ComputeJsIncomingMessage>...`)
+instead of a clean error. Fixed by setting
+`experimental.serverActions.bodySizeLimit: "5mb"` in `next.config.ts`,
+giving headroom above the real 4MB ceiling so the application's own
+friendlier size check is what actually fires for a genuinely oversized
+file. If this crash recurs on Netlify specifically even after this
+change, some reports suggest `bodySizeLimit` doesn't always take effect
+on certain serverless/edge runtimes — the reliable fallback is moving
+file bytes off Server Actions entirely and into a dedicated API Route
+Handler (this app already has a working precedent:
+`/api/sharepoint/documents-browse`), which isn't subject to the same
+Server-Action-specific body limit.
+
 ## Known limitations / deliberate scope boundaries
 
 - **Site-wide search doesn't exclude Archive paths.** Category-scoped
