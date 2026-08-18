@@ -1,6 +1,9 @@
 import { requireModuleAccess } from "@/lib/permissions";
 import { getEmployeeByEmail, getEmployeeProfile } from "@/lib/data";
 import { getMyEmploymentFile, getMyComplianceStatus } from "@/lib/employee-documents";
+import { getMyLeaveRequests } from "@/lib/leave";
+import { getMyPublishedReviews } from "@/lib/performance";
+import { canViewIdentity } from "@/lib/hcm-core";
 import { ProfileView } from "./profile-view";
 
 export default async function MyProfilePage() {
@@ -26,10 +29,31 @@ export default async function MyProfilePage() {
     return <NoRecordMessage reason="Something went wrong loading your profile. Please try again shortly." />;
   }
 
-  const employmentFile = await getMyEmploymentFile(profile.id);
+  const [employmentFile, leaveRequests, performanceReviews] = await Promise.all([
+    getMyEmploymentFile(profile.id),
+    getMyLeaveRequests(profile.id),
+    getMyPublishedReviews(profile.id),
+  ]);
   const complianceStatus = await getMyComplianceStatus(profile.id, employmentFile);
 
-  return <ProfileView profile={profile} employmentFile={employmentFile} complianceStatus={complianceStatus} />;
+  // "masked" here — a person only ever sees their OWN profile on this
+  // page, so this always resolves to "masked" (or "none" is
+  // unreachable, since match/profile above already confirm it's their
+  // own record) — computed via the same canViewIdentity() used
+  // everywhere else in the app rather than hard-coding "always mask,"
+  // so the one rule lives in one place. See docs/HCM_PHASE3.md.
+  const identityAccess = canViewIdentity(permissions, profile.email);
+
+  return (
+    <ProfileView
+      profile={profile}
+      employmentFile={employmentFile}
+      complianceStatus={complianceStatus}
+      leaveRequests={leaveRequests}
+      performanceReviews={performanceReviews}
+      showIdentity={identityAccess !== "none"}
+    />
+  );
 }
 
 function NoRecordMessage({ reason }: { reason: string }) {

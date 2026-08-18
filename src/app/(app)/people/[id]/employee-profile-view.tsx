@@ -14,6 +14,9 @@ import { EmployeeFormModal } from "../EmployeeFormModal";
 import { SystemAccessPermissions } from "./SystemAccessPermissions";
 import { addEquipment, addCertification } from "../employee-actions";
 import { EmployeeDocumentCentre } from "./EmployeeDocumentCentre";
+import { EmployeeHCMPanel } from "./EmployeeHCMPanel";
+import type { LeaveRequest } from "@/lib/leave";
+import type { PerformanceReview } from "@/lib/performance";
 
 function initials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -50,7 +53,12 @@ export function EmployeeProfileView({
   isAdmin,
   isSuperAdmin,
   isHR,
+  canEditIdentity,
+  canEditPayroll,
+  canManageThisEmployee,
   documents,
+  leaveRequests,
+  performanceReviews,
   managers,
 }: {
   profile: EmployeeProfile;
@@ -59,7 +67,12 @@ export function EmployeeProfileView({
   isAdmin: boolean;
   isSuperAdmin: boolean;
   isHR: boolean;
+  canEditIdentity: boolean;
+  canEditPayroll: boolean;
+  canManageThisEmployee: boolean;
   documents: { id: string; name: string; category: string; version: string; status: string; visibility: string; acknowledgementRequired: boolean; sharepointItemId: string | null; sharepointWebUrl: string | null; updated: string }[];
+  leaveRequests: LeaveRequest[];
+  performanceReviews: PerformanceReview[];
   managers: { id: string; name: string }[];
 }) {
   const [showEditForm, setShowEditForm] = useState(false);
@@ -298,6 +311,20 @@ export function EmployeeProfileView({
       {isHR && (
         <div className="mt-4">
           <EmployeeDocumentCentre employeeId={profile.id} documents={documents} />
+        </div>
+      )}
+
+      {(isHR || canManageThisEmployee || canEditPayroll) && (
+        <div className="mt-4">
+          <EmployeeHCMPanel
+            profile={profile}
+            leaveRequests={leaveRequests}
+            performanceReviews={performanceReviews}
+            canEditIdentity={canEditIdentity}
+            canEditPayroll={canEditPayroll}
+            canManageThisEmployee={canManageThisEmployee}
+            isHR={isHR}
+          />
         </div>
       )}
 

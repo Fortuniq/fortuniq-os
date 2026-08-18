@@ -6,6 +6,8 @@ import { getMyTasks, getOrganisationTaskStats } from "@/lib/tasks";
 import { getMyUpcomingEvents } from "@/lib/calendar";
 import { getTodayAttendance, getMyAttendanceHistory } from "@/lib/attendance";
 import { groupMyTasks } from "@/lib/tasks-core";
+import { getMyLeaveRequests, getPendingLeaveRequests } from "@/lib/leave";
+import { isWithinDays, isAnniversaryToday } from "@/lib/hcm-core";
 import { NAV_ITEMS } from "@/lib/nav";
 
 /**
@@ -29,7 +31,7 @@ const supabaseConfigured =
  * matches, since attendance/task features need a real employee record
  * to attach to, never a fabricated one.
  */
-export async function getEmployeeByEmail(email: string): Promise<{ id: string; name: string; role: string; dept: string } | null> {
+export async function getEmployeeByEmail(email: string): Promise<{ id: string; employeeNumber: string; name: string; role: string; dept: string; managerId: string | null } | null> {
   if (!supabaseConfigured) {
     // Even without a database, let the signed-in person's own name pass
     // through so the dashboard/attendance UI still works in mock mode.
@@ -37,9 +39,9 @@ export async function getEmployeeByEmail(email: string): Promise<{ id: string; n
   }
   try {
     const supabase = createServiceClient();
-    const { data } = await supabase.from("employees").select("id, name, role, dept, email").ilike("email", email).maybeSingle();
+    const { data } = await supabase.from("employees").select("id, employee_number, name, role, dept, email, manager_id").ilike("email", email).maybeSingle();
     if (!data) return null;
-    return { id: data.id, name: data.name, role: data.role, dept: data.dept };
+    return { id: data.id, employeeNumber: data.employee_number, name: data.name, role: data.role, dept: data.dept, managerId: data.manager_id ?? null };
   } catch {
     return null;
   }
@@ -110,6 +112,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryEntry[]> 
 export type EmployeeProfile = {
   id: string;
   employeeNumber: string | null;
+  managerId: string | null;
   name: string;
   preferredName: string | null;
   photoUrl: string | null;
@@ -133,6 +136,43 @@ export type EmployeeProfile = {
   archived: boolean;
   equipment: { id: string; item: string; serialNumber: string | null; issuedDate: string; returnedDate: string | null; status: string }[];
   certifications: { id: string; name: string; issuedDate: string | null; expiryDate: string | null }[];
+  // ---------- HCM Phase 3 ----------
+  identity: {
+    idNumber: string | null;
+    passportNumber: string | null;
+    dateOfBirth: string | null;
+    nationality: string | null;
+    gender: string | null;
+    homeAddress: string | null;
+    driversLicence: string | null;
+    workPermit: string | null;
+  };
+  employmentExtra: {
+    contractType: string | null;
+    noticePeriod: string | null;
+    probationEndDate: string | null;
+    payrollCycle: string | null;
+    shiftPattern: string | null;
+  };
+  payroll: {
+    salary: number | null;
+    payrollNumber: string | null;
+    uif: string | null;
+    paye: string | null;
+    medicalAid: string | null;
+    pension: string | null;
+    bonusEligibility: boolean;
+    leaveEncashment: number | null;
+    payrollStatus: string | null;
+  };
+  careerDevelopment: {
+    trainingGoals: string[];
+    developmentPlans: string;
+    completedProgrammes: string[];
+    futureCareerPath: string;
+    promotionRecommendations: string;
+  } | null;
+  promotionHistory: { date: string; fromRole: string; toRole: string; notes?: string }[];
 };
 
 export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | null> {
@@ -140,7 +180,7 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
     const mockEmp = mock.employees.find((e) => String(e.id) === id);
     if (!mockEmp) return null;
     return {
-      id: String(mockEmp.id), employeeNumber: `EMP-${String(mockEmp.id).padStart(4, "0")}`,
+      id: String(mockEmp.id), employeeNumber: `EMP-${String(mockEmp.id).padStart(4, "0")}`, managerId: null,
       name: mockEmp.name, preferredName: null, photoUrl: null, role: mockEmp.role, dept: mockEmp.dept,
       managerName: null, officeLocation: "Head Office, Pretoria North", status: mockEmp.status,
       employmentType: mockEmp.type === "Intern" ? "Intern" : "Full-Time", startDate: mockEmp.start,
@@ -148,8 +188,13 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
       email: `${mockEmp.name.toLowerCase().replace(" ", ".")}@iqfuels.co.za`, phone: null,
       emergencyContact: null, nextOfKin: null, bankingDetails: null, taxNumber: null,
       skills: [], performanceRating: null,
-      leaveBalance: { annual: 15, sick: 10, family_responsibility: 3 },
+      leaveBalance: { annual: 15, sick: 10, family_responsibility: 3, study: 0 },
       archived: false, equipment: [], certifications: [],
+      identity: { idNumber: null, passportNumber: null, dateOfBirth: null, nationality: null, gender: null, homeAddress: null, driversLicence: null, workPermit: null },
+      employmentExtra: { contractType: null, noticePeriod: null, probationEndDate: null, payrollCycle: null, shiftPattern: null },
+      payroll: { salary: null, payrollNumber: null, uif: null, paye: null, medicalAid: null, pension: null, bonusEligibility: false, leaveEncashment: null, payrollStatus: null },
+      careerDevelopment: null,
+      promotionHistory: [],
     };
   }
   try {
@@ -185,6 +230,7 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
     return {
       id: e.id,
       employeeNumber: e.employee_number,
+      managerId: e.manager_id ?? null,
       name: e.name,
       preferredName: e.preferred_name,
       photoUrl: e.photo_url,
@@ -213,6 +259,23 @@ export async function getEmployeeProfile(id: string): Promise<EmployeeProfile | 
       certifications: (certifications ?? []).map((c) => ({
         id: c.id, name: c.name, issuedDate: c.issued_date, expiryDate: c.expiry_date,
       })),
+      identity: {
+        idNumber: e.id_number ?? null, passportNumber: e.passport_number ?? null, dateOfBirth: e.date_of_birth ?? null,
+        nationality: e.nationality ?? null, gender: e.gender ?? null, homeAddress: e.home_address ?? null,
+        driversLicence: e.drivers_licence ?? null, workPermit: e.work_permit ?? null,
+      },
+      employmentExtra: {
+        contractType: e.contract_type ?? null, noticePeriod: e.notice_period ?? null,
+        probationEndDate: e.probation_end_date ?? null, payrollCycle: e.payroll_cycle ?? null, shiftPattern: e.shift_pattern ?? null,
+      },
+      payroll: {
+        salary: e.salary != null ? Number(e.salary) : null, payrollNumber: e.payroll_number ?? null,
+        uif: e.uif ?? null, paye: e.paye ?? null, medicalAid: e.medical_aid ?? null, pension: e.pension ?? null,
+        bonusEligibility: !!e.bonus_eligibility, leaveEncashment: e.leave_encashment != null ? Number(e.leave_encashment) : null,
+        payrollStatus: e.payroll_status ?? null,
+      },
+      careerDevelopment: e.career_development ?? null,
+      promotionHistory: e.promotion_history ?? [],
     };
   } catch (err) {
     console.error("getEmployeeProfile: unexpected error:", err instanceof Error ? err.message : err);
@@ -457,13 +520,35 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
     permissions.email ? getMyAttendanceHistory(permissions.email, 5) : Promise.resolve([]),
     hasModuleAccess(permissions, "documents") ? getExpiringDocuments() : Promise.resolve([]),
+    permissions.email ? getEmployeeProfile((await getEmployeeByEmail(permissions.email))?.id ?? "") : Promise.resolve(null),
   ]);
+
+  // HCM Phase 3 dashboard reminders — see docs/HCM_PHASE3.md, "Dashboard."
+  // Performance Review Due and Mandatory Training Outstanding are NOT
+  // included here: neither performance_reviews nor the Academy
+  // integration has a "next due date" concept yet, and fabricating one
+  // would be worse than omitting it. See docs/HCM_PHASE3.md, "Known
+  // limitations."
+  const isHRForReminders = permissions.isAdmin || permissions.role === "HR/Admin";
+  const [myLeaveRequests, orgPendingLeave] = await Promise.all([
+    myEmployeeRecord ? getMyLeaveRequests(myEmployeeRecord.id) : Promise.resolve([]),
+    isHRForReminders ? getPendingLeaveRequests() : Promise.resolve([]),
+  ]);
+  const upcomingLeave = myLeaveRequests.filter((r) => r.status === "Approved" && isWithinDays(r.startDate, 14));
+  const hcmReminders = {
+    upcomingLeave: upcomingLeave.map((r) => ({ leaveType: r.leaveType, startDate: r.startDate, endDate: r.endDate })),
+    myPendingLeaveCount: myLeaveRequests.filter((r) => r.status === "Pending").length,
+    orgPendingLeaveCount: orgPendingLeave.length,
+    probationEndingSoon: !!myEmployeeRecord?.employmentExtra.probationEndDate && isWithinDays(myEmployeeRecord.employmentExtra.probationEndDate, 14),
+    isBirthdayToday: isAnniversaryToday(myEmployeeRecord?.identity.dateOfBirth ?? null),
+    isWorkAnniversaryToday: isAnniversaryToday(myEmployeeRecord?.startDate ?? null),
+  };
 
   const taskGroups = groupMyTasks(myTasks);
 
@@ -504,6 +589,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     attendanceToday,
     attendanceHistory,
     expiringDocuments,
+    hcmReminders,
     workflowByModule: Object.fromEntries(workflowByModule),
     moduleCards,
     hasBroadVisibility,

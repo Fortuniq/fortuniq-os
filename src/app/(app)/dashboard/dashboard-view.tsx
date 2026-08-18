@@ -13,6 +13,7 @@ import { AttendanceCard } from "./AttendanceCard";
 import { MyAttendanceHistory } from "./MyAttendanceHistory";
 import { MyTasksCard } from "./MyTasksCard";
 import { DocumentExpiryCard } from "./DocumentExpiryCard";
+import { HCMRemindersCard } from "./HCMRemindersCard";
 import type { MyTask, TaskGroups } from "@/lib/tasks-core";
 import type { CalendarEvent } from "@/lib/calendar";
 import type { AttendanceRecord } from "@/lib/attendance-core";
@@ -30,6 +31,14 @@ type DashboardProps = {
   attendanceToday: AttendanceRecord | null;
   attendanceHistory: AttendanceRecord[];
   expiringDocuments: ExpiringDoc[];
+  hcmReminders: {
+    upcomingLeave: { leaveType: string; startDate: string; endDate: string }[];
+    myPendingLeaveCount: number;
+    orgPendingLeaveCount: number;
+    probationEndingSoon: boolean;
+    isBirthdayToday: boolean;
+    isWorkAnniversaryToday: boolean;
+  };
   workflowByModule: Record<string, number>;
   moduleCards: { key: string; label: string; href: string; taskCount: number }[];
   hasBroadVisibility: boolean;
@@ -60,7 +69,7 @@ function eventDayLabel(dateStr: string): string {
 }
 
 export function DashboardView({
-  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, workflowByModule,
+  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, hcmReminders, workflowByModule,
   moduleCards, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   const workflowEntries = Object.entries(workflowByModule).filter(([, count]) => count > 0);
@@ -152,6 +161,7 @@ export function DashboardView({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
         <MyAttendanceHistory records={attendanceHistory} />
         <DocumentExpiryCard documents={expiringDocuments} />
+        <HCMRemindersCard reminders={hcmReminders} isHR={role === "HR/Admin" || hasBroadVisibility} />
       </div>
 
       {/* Relevant module cards — only modules this person is permitted to access */}

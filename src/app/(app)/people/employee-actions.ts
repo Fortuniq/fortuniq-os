@@ -389,3 +389,100 @@ export async function uploadEmployeeDocument(formData: FormData): Promise<{ erro
     return { error: err instanceof Error ? err.message : "Something went wrong. Please try again." };
   }
 }
+
+// =========================================================================
+// HCM PHASE 3 — Identity, Employment (extra), Payroll edits
+// =========================================================================
+// Kept as separate, targeted actions rather than folding into the
+// general updateEmployee()/EmployeeFormModal flow — these are
+// permission-gated differently (Payroll needs Finance access too,
+// Identity/Employment-extra are HR/Super-Admin-only) and are edited
+// from their own dedicated cards on the HR Employee Profile screen. See
+// docs/HCM_PHASE3.md.
+
+export async function updateIdentity(employeeId: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    const caller = await getCurrentUserPermissions();
+    if (!caller.isAdmin && caller.role !== "HR/Admin") return { error: "Only HR or a Super Admin can edit Identity information." };
+
+    const supabase = createServiceClient();
+    const { error } = await supabase.from("employees").update({
+      id_number: String(formData.get("idNumber") ?? "").trim() || null,
+      passport_number: String(formData.get("passportNumber") ?? "").trim() || null,
+      date_of_birth: String(formData.get("dateOfBirth") ?? "").trim() || null,
+      nationality: String(formData.get("nationality") ?? "").trim() || null,
+      gender: String(formData.get("gender") ?? "").trim() || null,
+      home_address: String(formData.get("homeAddress") ?? "").trim() || null,
+      drivers_licence: String(formData.get("driversLicence") ?? "").trim() || null,
+      work_permit: String(formData.get("workPermit") ?? "").trim() || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", employeeId);
+    if (error) return { error: error.message };
+
+    await logAudit({ actorEmail: caller.email!, actorName: caller.name, action: "team_member_modules_changed", targetType: "employee", targetId: employeeId, metadata: { field: "identity" } });
+    revalidatePath(`/people/${employeeId}`);
+    revalidatePath("/profile");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't save Identity information." };
+  }
+}
+
+export async function updateEmploymentExtra(employeeId: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    const caller = await getCurrentUserPermissions();
+    if (!caller.isAdmin && caller.role !== "HR/Admin") return { error: "Only HR or a Super Admin can edit Employment information." };
+
+    const supabase = createServiceClient();
+    const { error } = await supabase.from("employees").update({
+      contract_type: String(formData.get("contractType") ?? "").trim() || null,
+      notice_period: String(formData.get("noticePeriod") ?? "").trim() || null,
+      probation_end_date: String(formData.get("probationEndDate") ?? "").trim() || null,
+      payroll_cycle: String(formData.get("payrollCycle") ?? "").trim() || null,
+      shift_pattern: String(formData.get("shiftPattern") ?? "").trim() || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", employeeId);
+    if (error) return { error: error.message };
+
+    await logAudit({ actorEmail: caller.email!, actorName: caller.name, action: "team_member_modules_changed", targetType: "employee", targetId: employeeId, metadata: { field: "employment_extra" } });
+    revalidatePath(`/people/${employeeId}`);
+    revalidatePath("/profile");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't save Employment information." };
+  }
+}
+
+/** Finance, HR, or Super Admin — matches canViewPayroll() in hcm-core.ts exactly. */
+export async function updatePayroll(employeeId: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    const caller = await getCurrentUserPermissions();
+    const allowed = caller.isAdmin || caller.role === "HR/Admin" || caller.role === "Finance";
+    if (!allowed) return { error: "Only Finance, HR, or a Super Admin can edit Payroll information." };
+
+    const salaryRaw = String(formData.get("salary") ?? "").trim();
+    const salary = salaryRaw === "" ? null : Number(salaryRaw);
+    if (salary !== null && (!Number.isFinite(salary) || salary < 0)) return { error: "Salary must be a valid, non-negative number." };
+
+    const supabase = createServiceClient();
+    const { error } = await supabase.from("employees").update({
+      salary,
+      payroll_number: String(formData.get("payrollNumber") ?? "").trim() || null,
+      uif: String(formData.get("uif") ?? "").trim() || null,
+      paye: String(formData.get("paye") ?? "").trim() || null,
+      medical_aid: String(formData.get("medicalAid") ?? "").trim() || null,
+      pension: String(formData.get("pension") ?? "").trim() || null,
+      bonus_eligibility: formData.get("bonusEligibility") === "on",
+      leave_encashment: String(formData.get("leaveEncashment") ?? "").trim() ? Number(formData.get("leaveEncashment")) : null,
+      payroll_status: String(formData.get("payrollStatus") ?? "Active"),
+      updated_at: new Date().toISOString(),
+    }).eq("id", employeeId);
+    if (error) return { error: error.message };
+
+    await logAudit({ actorEmail: caller.email!, actorName: caller.name, action: "team_member_modules_changed", targetType: "employee", targetId: employeeId, metadata: { field: "payroll" } });
+    revalidatePath(`/people/${employeeId}`);
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't save Payroll information." };
+  }
+}

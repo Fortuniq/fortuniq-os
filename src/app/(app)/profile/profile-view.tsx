@@ -1,35 +1,72 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Download, ExternalLink, CheckCircle2, AlertTriangle, Loader2, User, Award } from "lucide-react";
+import { Download, ExternalLink, CheckCircle2, AlertTriangle, Loader2, User, Award, IdCard, CalendarDays, TrendingUp, Plus } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { formatDate } from "@/lib/format";
 import { acknowledgeDocumentAction } from "./profile-actions";
+import { cancelMyLeaveRequestAction } from "./leave-actions";
+import { LeaveRequestModal } from "./LeaveRequestModal";
+import { maskIdNumber } from "@/lib/hcm-core";
 import type { EmployeeProfile } from "@/lib/data";
 import type { EmploymentFileDocument } from "@/lib/employee-documents";
 import type { ComplianceItem } from "@/lib/compliance-status-core";
+import type { LeaveRequest } from "@/lib/leave";
+import type { PerformanceReview } from "@/lib/performance";
 
 export function ProfileView({
-  profile, employmentFile, complianceStatus,
-}: { profile: EmployeeProfile; employmentFile: EmploymentFileDocument[]; complianceStatus: ComplianceItem[] }) {
+  profile, employmentFile, complianceStatus, leaveRequests, performanceReviews, showIdentity,
+}: {
+  profile: EmployeeProfile;
+  employmentFile: EmploymentFileDocument[];
+  complianceStatus: ComplianceItem[];
+  leaveRequests: LeaveRequest[];
+  performanceReviews: PerformanceReview[];
+  showIdentity: boolean;
+}) {
   return (
     <div>
       <PageHeader title="My Profile" description="Your own employment information, documents, and compliance status." />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
+          {showIdentity && <IdentityCard profile={profile} />}
           <MyInformationCard profile={profile} />
           <ContactCard profile={profile} />
           <MyEmploymentFileCard documents={employmentFile} />
           <SkillsCertificationsCard profile={profile} />
+          <LeaveCard profile={profile} requests={leaveRequests} />
+          <PerformanceCard reviews={performanceReviews} />
         </div>
         <div>
           <ComplianceStatusCard items={complianceStatus} />
         </div>
       </div>
     </div>
+  );
+}
+
+function IdentityCard({ profile }: { profile: EmployeeProfile }) {
+  const id = profile.identity;
+  return (
+    <Card>
+      <CardHeader><CardTitle><span className="flex items-center gap-1.5"><IdCard className="w-3.5 h-3.5 text-orange" /> Identity</span></CardTitle></CardHeader>
+      <CardBody>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <Field label="South African ID Number" value={maskIdNumber(id.idNumber)} />
+          <Field label="Passport Number" value={id.passportNumber ?? "—"} />
+          <Field label="Date of Birth" value={id.dateOfBirth ? formatDate(id.dateOfBirth) : "—"} />
+          <Field label="Nationality" value={id.nationality ?? "—"} />
+          <Field label="Gender" value={id.gender ?? "—"} />
+          <Field label="Driver's Licence" value={id.driversLicence ?? "—"} />
+          <Field label="Work Permit" value={id.workPermit ?? "—"} />
+          <Field label="Home Address" value={id.homeAddress ?? "—"} />
+        </dl>
+        <p className="text-[11px] text-light-grey mt-3">Sensitive fields are shown masked. Contact HR to update this information.</p>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -60,6 +97,11 @@ function MyInformationCard({ profile }: { profile: EmployeeProfile }) {
           <Field label="Employment Type" value={profile.employmentType ?? "—"} />
           <Field label="Start Date" value={formatDate(profile.startDate)} />
           <Field label="Probation Status" value={profile.probationStatus ?? "—"} />
+          <Field label="Contract Type" value={profile.employmentExtra.contractType ?? "—"} />
+          <Field label="Notice Period" value={profile.employmentExtra.noticePeriod ?? "—"} />
+          <Field label="Probation End Date" value={profile.employmentExtra.probationEndDate ? formatDate(profile.employmentExtra.probationEndDate) : "—"} />
+          <Field label="Payroll Cycle" value={profile.employmentExtra.payrollCycle ?? "—"} />
+          <Field label="Shift Pattern" value={profile.employmentExtra.shiftPattern ?? "—"} />
         </dl>
       </CardBody>
     </Card>
@@ -251,6 +293,106 @@ function AcknowledgeConfirmDialog({ doc, onClose }: { doc: EmploymentFileDocumen
         </div>
       </div>
     </div>
+  );
+}
+
+const LEAVE_BALANCE_LABELS: Record<string, string> = {
+  annual: "Annual Leave", sick: "Sick Leave", family_responsibility: "Family Responsibility Leave", study: "Study Leave",
+};
+
+function LeaveCard({ profile, requests }: { profile: EmployeeProfile; requests: LeaveRequest[] }) {
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const balance = profile.leaveBalance ?? {};
+
+  function handleCancel(id: string) {
+    setCancellingId(id);
+    startTransition(async () => {
+      const result = await cancelMyLeaveRequestAction(id);
+      setCancellingId(null);
+      if (result?.error) alert(result.error);
+    });
+  }
+
+  const LEAVE_STATUS_TONE: Record<string, "success" | "danger" | "neutral" | "warning"> = {
+    Approved: "success", Rejected: "danger", Cancelled: "neutral", Pending: "warning",
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle><span className="flex items-center gap-1.5"><CalendarDays className="w-3.5 h-3.5 text-orange" /> Leave</span></CardTitle>
+        <button onClick={() => setShowRequestModal(true)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-1.5 rounded-lg hover:bg-orange transition-colors">
+          <Plus className="w-3.5 h-3.5" /> Request Leave
+        </button>
+      </CardHeader>
+      <CardBody>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {Object.entries(LEAVE_BALANCE_LABELS).map(([key, label]) => {
+            const value = Number(balance[key] ?? 0);
+            const max = key === "annual" ? 15 : key === "sick" ? 10 : key === "family_responsibility" ? 3 : 6;
+            const pct = Math.min(100, Math.max(0, (value / max) * 100));
+            return (
+              <div key={key}>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-grey">{label}</span>
+                  <span className="font-semibold text-navy">{value} days</span>
+                </div>
+                <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+                  <div className="h-full bg-orange rounded-full" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {requests.length === 0 && <p className="text-sm text-light-grey py-1">No leave requests yet.</p>}
+        {requests.slice(0, 6).map((r) => (
+          <div key={r.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+            <div className="min-w-0">
+              <p className="text-sm text-navy">{r.leaveType} — {formatDate(r.startDate)} to {formatDate(r.endDate)}</p>
+              <p className="text-xs text-light-grey">{r.workingDays} working day{r.workingDays === 1 ? "" : "s"} · requested {formatDate(r.requestedAt)}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge tone={LEAVE_STATUS_TONE[r.status] ?? "neutral"}>{r.status}</Badge>
+              {r.status === "Pending" && (
+                <button
+                  onClick={() => handleCancel(r.id)}
+                  disabled={isPending && cancellingId === r.id}
+                  className="text-xs text-grey hover:text-red-600 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </CardBody>
+
+      {showRequestModal && <LeaveRequestModal onClose={() => setShowRequestModal(false)} />}
+    </Card>
+  );
+}
+
+function PerformanceCard({ reviews }: { reviews: PerformanceReview[] }) {
+  if (reviews.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader><CardTitle><span className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-orange" /> Performance</span></CardTitle></CardHeader>
+      <CardBody className="space-y-3">
+        {reviews.map((r) => (
+          <div key={r.id} className="py-2 border-b border-border last:border-0">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-medium text-navy">{r.reviewPeriod}</p>
+              {r.overallRating && <Badge tone="info">{r.overallRating}</Badge>}
+            </div>
+            {r.managerFeedback && <p className="text-xs text-grey">{r.managerFeedback}</p>}
+            <p className="text-xs text-light-grey mt-1">Reviewed by {r.reviewerName ?? r.reviewerEmail} · {formatDate(r.createdAt)}</p>
+          </div>
+        ))}
+      </CardBody>
+    </Card>
   );
 }
 
