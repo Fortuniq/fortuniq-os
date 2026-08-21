@@ -496,14 +496,14 @@ export async function recordTenderSubmission(tenderId: string, formData: FormDat
         const finalPackFile = formData.get("finalPack") as File | null;
         if (finalPackFile && finalPackFile.size > 0) {
           const bytes = await finalPackFile.arrayBuffer();
-          const uploaded = await uploadFileToFolder(accessToken, folder.id, finalPackFile.name, bytes, finalPackFile.type);
+          const uploaded = await uploadFileToFolder(accessToken, folder.folderId, finalPackFile.name, bytes, finalPackFile.type);
           finalPackItemId = uploaded.id;
           finalPackWebUrl = uploaded.webUrl;
         }
         const proofFile = formData.get("proofOfSubmission") as File | null;
         if (proofFile && proofFile.size > 0) {
           const bytes = await proofFile.arrayBuffer();
-          const uploaded = await uploadFileToFolder(accessToken, folder.id, proofFile.name, bytes, proofFile.type);
+          const uploaded = await uploadFileToFolder(accessToken, folder.folderId, proofFile.name, bytes, proofFile.type);
           proofItemId = uploaded.id;
           proofWebUrl = uploaded.webUrl;
         }
