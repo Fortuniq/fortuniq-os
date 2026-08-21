@@ -36,3 +36,61 @@ export function calculateCompliancePct(items: ChecklistItem[]): ComplianceResult
     totalCount: items.length,
   };
 }
+
+// =========================================================================
+// TENDER WORKFLOW STAGES — see docs/TENDER_PLANNER.md
+// =========================================================================
+
+export type TenderWorkflowStage = "Drafting" | "Pricing" | "Assessment & Verification" | "Submission Ready" | "Submitted";
+
+export const TENDER_WORKFLOW_STAGE_ORDER: TenderWorkflowStage[] = [
+  "Drafting", "Pricing", "Assessment & Verification", "Submission Ready", "Submitted",
+];
+
+/**
+ * Stages move forward one step at a time, or backward to any earlier
+ * stage (e.g. Assessment finds a problem and sends work back to
+ * Pricing) — but never skip ahead. "Stage should not be changed
+ * casually" per the brief; this is the shape of "casually" this
+ * function actually blocks — jumping straight from Drafting to
+ * Submitted, for instance.
+ */
+export function canTransitionTenderStage(from: TenderWorkflowStage, to: TenderWorkflowStage): boolean {
+  const fromIdx = TENDER_WORKFLOW_STAGE_ORDER.indexOf(from);
+  const toIdx = TENDER_WORKFLOW_STAGE_ORDER.indexOf(to);
+  if (fromIdx === -1 || toIdx === -1) return false;
+  if (toIdx <= fromIdx) return true; // moving backward, or staying put, is always fine
+  return toIdx === fromIdx + 1; // forward only one step at a time
+}
+
+export type SubmissionReadinessCheck = {
+  ready: boolean;
+  issues: string[];
+};
+
+/**
+ * The gate before Assessment & Verification -> Submission Ready — see
+ * docs/TENDER_PLANNER.md, "Stage controls." Checks what FortunIQ OS can
+ * actually verify from its own data: every checklist item confirmed,
+ * and compliance at 100%. It does NOT independently invent an
+ * "approvals obtained" check — the brief is explicit that "FortunIQ
+ * Intelligence may identify risks... but must not independently approve
+ * the stage transition," and the same principle applies to this plain
+ * logic function: it surfaces what's incomplete and requires a human
+ * with the right permission to make the actual call (see
+ * moveTenderStage() in tender-actions.ts, which requires explicit
+ * Approve-level permission for this specific transition).
+ */
+export function checkSubmissionReadiness(checklist: ChecklistItem[], compliancePct: number | null): SubmissionReadinessCheck {
+  const issues: string[] = [];
+  if (checklist.length === 0) {
+    issues.push("No checklist items exist yet for this tender.");
+  } else {
+    const outstanding = checklist.filter((i) => !i.done).length;
+    if (outstanding > 0) issues.push(`${outstanding} checklist item${outstanding === 1 ? "" : "s"} not yet confirmed.`);
+  }
+  if (compliancePct === null || compliancePct < 100) {
+    issues.push("Compliance is not yet at 100%.");
+  }
+  return { ready: issues.length === 0, issues };
+}

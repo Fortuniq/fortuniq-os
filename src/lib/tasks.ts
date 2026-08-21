@@ -99,10 +99,35 @@ export async function createTaskForEmployee(params: {
   workflowStage?: string;
   createdBy?: string;
 }): Promise<void> {
-  if (!supabaseConfigured) return; // no-op until a database is connected
+  await createTaskForEmployeeWithId(params);
+}
+
+/**
+ * Same as createTaskForEmployee() but returns the new task's id —
+ * needed by callers that must do something further with the specific
+ * row afterward (e.g. syncing a Tender task to Microsoft Planner and
+ * storing the returned planner_task_id back on it — see
+ * tender-planner.ts). createTaskForEmployee() above is kept as a
+ * fire-and-forget wrapper for every caller that doesn't need the id,
+ * so nothing else in the app had to change.
+ */
+export async function createTaskForEmployeeWithId(params: {
+  title: string;
+  employeeEmail: string;
+  moduleKey: ModuleKey;
+  recordId?: string;
+  recordUrl?: string;
+  dueDate?: string;
+  priority?: "High" | "Medium" | "Low";
+  workflowStage?: string;
+  createdBy?: string;
+  checklist?: { item: string; done: boolean }[];
+  notes?: string;
+}): Promise<string | null> {
+  if (!supabaseConfigured) return null;
   try {
     const supabase = createServiceClient();
-    await supabase.from("tasks").insert({
+    const { data, error } = await supabase.from("tasks").insert({
       title: params.title,
       employee_email: params.employeeEmail.toLowerCase(),
       module_key: params.moduleKey,
@@ -114,12 +139,17 @@ export async function createTaskForEmployee(params: {
       workflow_stage: params.workflowStage ?? null,
       created_by: params.createdBy ?? null,
       owner: params.employeeEmail,
-    });
+      checklist: params.checklist ?? [],
+      notes: params.notes ?? null,
+    }).select("id").single();
+    if (error) throw error;
+    return data.id as string;
   } catch (err) {
     // A failure to create a follow-up task should never break the
     // module action that triggered it (e.g. saving a tender) — same
     // "never block the real action" principle as logAudit().
     console.error("createTaskForEmployee failed:", err);
+    return null;
   }
 }
 

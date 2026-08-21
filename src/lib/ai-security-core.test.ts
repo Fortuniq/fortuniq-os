@@ -22,6 +22,7 @@ function doc(overrides: Partial<ClassifiableDocument> = {}): ClassifiableDocumen
     authorizedRoles: [],
     authorizedEmails: [],
     aiExcluded: false,
+    employeeId: null,
     ...overrides,
   };
 }
@@ -162,5 +163,61 @@ describe("canAccessDocumentByClassification (used by the Documents module itself
   it("is not affected by ai_excluded — a document can be AI-excluded but still humanly visible to authorised people", () => {
     const admin = activeUser("Super Admin");
     expect(canAccessDocumentByClassification(admin, doc({ classification: "General", aiExcluded: true }))).toBe(true);
+  });
+});
+
+describe("Employee-document security trimming", () => {
+  it("hides an employee-linked document from someone who is neither the employee, HR, nor Super Admin, even at General classification", () => {
+    const marketing = activeUser("Sales/Marketing");
+    const employmentContract = doc({ classification: "General", employeeId: "emp-1" });
+    expect(canAccessDocumentByClassification(marketing, employmentContract, null)).toBe(false);
+  });
+
+  it("shows the document to the employee it belongs to", () => {
+    const employee = activeUser("Employee");
+    const employmentContract = doc({ classification: "General", employeeId: "emp-1" });
+    expect(canAccessDocumentByClassification(employee, employmentContract, "emp-1")).toBe(true);
+  });
+
+  it("does not show it to a DIFFERENT employee, even with a valid employee id of their own", () => {
+    const employee = activeUser("Employee");
+    const employmentContract = doc({ classification: "General", employeeId: "emp-1" });
+    expect(canAccessDocumentByClassification(employee, employmentContract, "emp-2")).toBe(false);
+  });
+
+  it("shows it to HR/Admin regardless of whose document it is", () => {
+    const hr = activeUser("HR/Admin");
+    const employmentContract = doc({ classification: "General", employeeId: "emp-1" });
+    expect(canAccessDocumentByClassification(hr, employmentContract, null)).toBe(true);
+  });
+
+  it("shows it to Super Admin regardless of whose document it is", () => {
+    const admin = activeUser("Super Admin");
+    const employmentContract = doc({ classification: "General", employeeId: "emp-1" });
+    expect(canAccessDocumentByClassification(admin, employmentContract, null)).toBe(true);
+  });
+
+  it("a non-employee-linked document (employeeId null) is unaffected by this rule — falls through to ordinary classification checks", () => {
+    const marketing = activeUser("Sales/Marketing");
+    const policy = doc({ classification: "General", employeeId: null });
+    expect(canAccessDocumentByClassification(marketing, policy, null)).toBe(true);
+  });
+
+  it("flows through filterDocumentsForAI and canAccessDocumentForAI the same way", () => {
+    const marketing = activeUser("Sales/Marketing");
+    const docs = [
+      doc({ classification: "General", employeeId: "emp-1" }), // someone else's contract
+      doc({ classification: "General", employeeId: null }), // ordinary policy
+    ];
+    const visible = filterDocumentsForAI(marketing, docs, null);
+    expect(visible.length).toBe(1);
+    expect(visible[0].employeeId).toBeNull();
+  });
+});
+
+describe("Public classification (alias for General)", () => {
+  it("treats Public the same as General — universally visible to anyone with Documents access", () => {
+    const employee = activeUser("Employee");
+    expect(canAccessDocumentByClassification(employee, doc({ classification: "Public" }), null)).toBe(true);
   });
 });

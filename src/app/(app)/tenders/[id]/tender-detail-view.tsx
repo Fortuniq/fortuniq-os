@@ -14,10 +14,11 @@ import {
   toggleChecklistItem, addChecklistItem, deleteChecklistItem,
   updateSubmissionInfo, retryTenderFolderCreation, generateChecklistWithAI,
 } from "../tender-actions";
+import { TenderWorkflowControl } from "./TenderWorkflowControl";
 
 type Tab = "overview" | "compliance" | "documents" | "submissions";
 
-export function TenderDetailView({ tender, canEdit, sharePointConfigured }: { tender: TenderDetail; canEdit: boolean; sharePointConfigured: boolean }) {
+export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfigured }: { tender: TenderDetail; canEdit: boolean; canApprove: boolean; sharePointConfigured: boolean }) {
   const [tab, setTab] = useState<Tab>("overview");
 
   const tabs: { key: Tab; label: string; icon: typeof ClipboardList }[] = [
@@ -60,7 +61,12 @@ export function TenderDetailView({ tender, canEdit, sharePointConfigured }: { te
         })}
       </div>
 
-      {tab === "overview" && <OverviewTab tender={tender} />}
+      {tab === "overview" && (
+        <div className="space-y-4 max-w-xl">
+          <TenderWorkflowControl tenderId={String(tender.id)} currentStage={tender.stage ?? "Drafting"} canEdit={canEdit} canApprove={canApprove} />
+          <OverviewTab tender={tender} />
+        </div>
+      )}
       {tab === "compliance" && <ComplianceTab tender={tender} canEdit={canEdit} />}
       {tab === "documents" && <DocumentsTab tender={tender} canEdit={canEdit} sharePointConfigured={sharePointConfigured} />}
       {tab === "submissions" && <SubmissionsTab tender={tender} canEdit={canEdit} />}

@@ -11,6 +11,7 @@ import { catalogueSharePointFile, updateDocumentClassification, deleteDocumentRe
 import { DocumentLinkModal } from "./DocumentLinkModal";
 import { VersionHistoryModal } from "./VersionHistoryModal";
 import { DocumentWorkflowControl } from "./DocumentWorkflowControl";
+import { AddDocumentModal } from "./AddDocumentModal";
 import { ExpiryBadge } from "./ExpiryBadge";
 import { isExpiringSoon, isExpired } from "@/lib/documents-core";
 import type { SharePointFile } from "@/lib/graph";
@@ -60,6 +61,7 @@ export function DocumentsView({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [showAddDocument, setShowAddDocument] = useState(false);
   const [browseFiles, setBrowseFiles] = useState<SharePointFile[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
@@ -239,10 +241,17 @@ export function DocumentsView({
         title="Documents"
         description="Enterprise document control — files live in SharePoint, with versioning, approval workflow, and audit trail managed here."
         action={
-          sharePointConfigured && canCreate ? (
-            <button onClick={openBrowse} className="flex items-center gap-2 bg-navy text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-orange transition-colors">
-              <FolderSync className="w-4 h-4" /> Browse SharePoint
-            </button>
+          canCreate ? (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowAddDocument(true)} className="flex items-center gap-2 bg-orange text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-navy transition-colors">
+                <Plus className="w-4 h-4" /> Add Document
+              </button>
+              {sharePointConfigured && (
+                <button onClick={openBrowse} className="flex items-center gap-2 bg-navy text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-orange transition-colors">
+                  <FolderSync className="w-4 h-4" /> Browse SharePoint
+                </button>
+              )}
+            </div>
           ) : undefined
         }
       />
@@ -344,6 +353,8 @@ export function DocumentsView({
           </div>
         </div>
       )}
+
+      {showAddDocument && <AddDocumentModal categories={categories} onClose={() => setShowAddDocument(false)} />}
 
       {manageAccessDoc && (
         <ManageAccessModal doc={manageAccessDoc} onClose={() => setManageAccessDoc(null)} />

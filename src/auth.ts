@@ -27,6 +27,16 @@ const SCOPES = [
   "User.Read",
   "Files.ReadWrite.All",
   "Sites.ReadWrite.All",
+  // Added for Microsoft Planner integration (Tender Planner — see
+  // docs/TENDER_PLANNER.md). This is a NEW scope beyond what was
+  // requested before, meaning every person who signs in after this
+  // deploys will see a new Microsoft consent prompt the next time they
+  // sign in. Requested only because explicitly instructed to build the
+  // full Planner integration — see that doc for what it's used for and
+  // confirm this is still wanted before deploying, since it's a
+  // real, visible change to everyone's sign-in experience, not just an
+  // internal one.
+  "Tasks.ReadWrite",
 ].join(" ");
 
 type JWTWithGraphToken = {

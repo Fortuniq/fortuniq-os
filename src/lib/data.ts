@@ -311,7 +311,7 @@ export async function getDocuments() {
   const mockFallback = () => mock.documents.map((d) => ({
     ...d, status: "Approved" as const, sharepointItemId: null, sharepointWebUrl: null,
     classification: "Internal" as const, authorizedRoles: [] as string[], authorizedEmails: [] as string[], aiExcluded: false,
-    expiryDate: null, currentVersionNumber: 1, modifiedBy: null,
+    expiryDate: null, currentVersionNumber: 1, modifiedBy: null, employeeId: null as string | null, description: null as string | null, reviewDate: null as string | null,
   }));
   if (!supabaseConfigured) return mockFallback();
   try {
@@ -335,6 +335,9 @@ export async function getDocuments() {
       expiryDate: (d.expiry_date as string) ?? null,
       currentVersionNumber: (d.current_version_number as number) ?? 1,
       modifiedBy: (d.modified_by as string) ?? null,
+      employeeId: (d.employee_id as string) ?? null,
+      description: (d.description as string) ?? null,
+      reviewDate: (d.review_date as string) ?? null,
     }));
   } catch {
     return mockFallback();
@@ -363,6 +366,46 @@ export async function getExpiringDocuments() {
     }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Tender Dashboard workflow indicators — see docs/TENDER_PLANNER.md,
+ * "Tender Dashboard." Stage counts come from the tenders themselves;
+ * Due This Week / Overdue reuse the same unified `tasks` table
+ * (module_key = 'tenders') the rest of this app's dashboard already
+ * relies on, rather than a separate tender-task-counting system.
+ */
+export async function getTenderWorkflowCounts() {
+  const empty = { drafting: 0, pricing: 0, awaitingAssessment: 0, submissionReady: 0, dueThisWeek: 0, overdueTasks: 0 };
+  if (!supabaseConfigured) return empty;
+  try {
+    const supabase = createServiceClient();
+    const [{ data: tenders }, { data: tasks }] = await Promise.all([
+      supabase.from("tenders").select("stage").in("status", ["Open"]),
+      supabase.from("tasks").select("due_date, status").eq("module_key", "tenders").neq("status", "Completed"),
+    ]);
+
+    const counts = { ...empty };
+    for (const t of tenders ?? []) {
+      if (t.stage === "Drafting") counts.drafting++;
+      else if (t.stage === "Pricing") counts.pricing++;
+      else if (t.stage === "Assessment & Verification") counts.awaitingAssessment++;
+      else if (t.stage === "Submission Ready") counts.submissionReady++;
+    }
+
+    const today = new Date();
+    const weekFromNow = new Date(today.getTime() + 7 * 86400000);
+    for (const task of tasks ?? []) {
+      if (!task.due_date) continue;
+      const due = new Date(task.due_date + "T00:00:00");
+      if (due < new Date(today.toDateString())) counts.overdueTasks++;
+      else if (due <= weekFromNow) counts.dueThisWeek++;
+    }
+
+    return counts;
+  } catch {
+    return empty;
   }
 }
 

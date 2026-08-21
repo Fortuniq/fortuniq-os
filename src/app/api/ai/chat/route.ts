@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getCurrentUserPermissions, hasModuleAccess } from "@/lib/permissions";
 import { auth } from "@/auth";
-import { getDocuments } from "@/lib/data";
+import { getDocuments, getEmployeeByEmail } from "@/lib/data";
 import { getDocumentTextContent, canUserAccessItem, isSharePointConfigured } from "@/lib/graph";
 import { filterDocumentsForAI } from "@/lib/ai-security-core";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -76,9 +76,14 @@ async function buildSecureDocumentContext(
   // Draft, Pending Approval, and Archived are never referenced.
   const approved = allDocuments.filter((d) => d.status === "Approved" || d.status === "Published");
 
-  // Layer 1: classification + role/named authorisation. Confidential and
-  // Highly Confidential material is removed here, before anything else.
-  const classificationAllowed = filterDocumentsForAI(permissions, approved);
+  // Layer 1: classification + role/named authorisation, INCLUDING
+  // employee-document ownership trimming (see
+  // canAccessDocumentByClassification in ai-security-core.ts) —
+  // Confidential/Highly Confidential material AND any document
+  // belonging to someone else's personnel file are both removed here,
+  // before anything else. See docs/DOCUMENT_HUB_SECURITY.md.
+  const viewerEmployee = permissions.email ? await getEmployeeByEmail(permissions.email) : null;
+  const classificationAllowed = filterDocumentsForAI(permissions, approved, viewerEmployee?.id ?? null);
   if (classificationAllowed.length === 0) {
     return { context: "", sourcesUsed: [] };
   }

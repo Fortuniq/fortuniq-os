@@ -718,3 +718,126 @@ export async function getEmployeeRootFolder(accessToken: string, employeeNumber:
   const employeesPath = `${DOCUMENT_LIBRARY_ROOT}/${encodePathSegment(sanitiseFolderName(EMPLOYEES_FOLDER_NAME))}`;
   return ensureFolder(accessToken, driveId, employeesPath, employeeFolderName(employeeNumber, employeeName));
 }
+
+// =========================================================================
+// MICROSOFT PLANNER INTEGRATION — Tender Planner
+// =========================================================================
+// See docs/TENDER_PLANNER.md for the full design. Uses ONE shared
+// Planner plan ("FortunIQ Tender Workflow") with 5 buckets matching the
+// tender workflow stages, rather than a new plan per tender — Planner
+// plans require a Microsoft 365 Group as their container, and
+// programmatically creating a new group per tender would need the much
+// broader Group.ReadWrite.All permission. Per this app's established
+// principle of not requesting Graph permissions beyond what's actually
+// needed, the plan itself is provisioned ONCE, manually, by an admin in
+// Planner/Teams, and its id is set as the PLANNER_PLAN_ID environment
+// variable — the same pattern already used for SHAREPOINT_SITE_URL.
+
+export const isPlannerConfigured = !!process.env.PLANNER_PLAN_ID;
+
+export const TENDER_WORKFLOW_STAGES = [
+  "Drafting", "Pricing", "Assessment & Verification", "Submission Ready", "Submitted",
+] as const;
+export type TenderWorkflowStage = (typeof TENDER_WORKFLOW_STAGES)[number];
+
+function requirePlannerPlanId(): string {
+  const planId = process.env.PLANNER_PLAN_ID;
+  if (!planId) throw new Error("Microsoft Planner isn't configured yet — set PLANNER_PLAN_ID. See docs/TENDER_PLANNER.md.");
+  return planId;
+}
+
+/**
+ * Ensures all 5 workflow-stage buckets exist in the shared tender plan,
+ * creating any that are missing, and returns a stage-name -> bucket-id
+ * map. Safe to call before every Planner action — idempotent, same
+ * pattern as ensureFolder()/ensureDocumentLibraryStructure() elsewhere
+ * in this file.
+ */
+export async function ensureTenderPlannerBuckets(accessToken: string): Promise<Record<TenderWorkflowStage, string>> {
+  const planId = requirePlannerPlanId();
+  const data = await graphFetch(`/planner/plans/${planId}/buckets`, accessToken);
+  const existing = new Map<string, string>((data.value ?? []).map((b: Record<string, unknown>) => [b.name as string, b.id as string]));
+
+  const result = {} as Record<TenderWorkflowStage, string>;
+  let orderHint = " !";
+  for (const stage of TENDER_WORKFLOW_STAGES) {
+    if (existing.has(stage)) {
+      result[stage] = existing.get(stage)!;
+      continue;
+    }
+    const created = await graphFetch(`/planner/buckets`, accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: stage, planId, orderHint }),
+    });
+    result[stage] = created.id as string;
+    orderHint = created.orderHint as string; // chain hints so buckets stay in stage order
+  }
+  return result;
+}
+
+/** Creates a new Planner task in the bucket for a given workflow stage. Returns the Planner task id. */
+export async function createPlannerTask(
+  accessToken: string,
+  bucketId: string,
+  title: string,
+  dueDateTime?: string
+): Promise<string> {
+  const planId = requirePlannerPlanId();
+  const data = await graphFetch(`/planner/tasks`, accessToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      planId,
+      bucketId,
+      title,
+      ...(dueDateTime ? { dueDateTime } : {}),
+    }),
+  });
+  return data.id as string;
+}
+
+/**
+ * Moves an existing Planner task to a different bucket — used when a
+ * tender's workflow stage changes, so its task visibly moves on the
+ * Planner board too. Planner requires an If-Match ETag on every update,
+ * so this fetches the task's current ETag first.
+ */
+export async function movePlannerTaskToBucket(accessToken: string, plannerTaskId: string, bucketId: string): Promise<void> {
+  const res = await fetch(`${GRAPH_BASE}/planner/tasks/${plannerTaskId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new GraphError(`Couldn't read Planner task before moving it: ${res.status}`, res.status);
+  const etag = res.headers.get("etag") ?? res.headers.get("ETag");
+  if (!etag) throw new GraphError("Planner task has no ETag — can't safely update it.", 500);
+
+  const patchRes = await fetch(`${GRAPH_BASE}/planner/tasks/${plannerTaskId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "If-Match": etag },
+    body: JSON.stringify({ bucketId }),
+  });
+  if (!patchRes.ok && patchRes.status !== 204) {
+    const body = await patchRes.text();
+    throw new GraphError(`Couldn't move Planner task: ${patchRes.status} ${body}`, patchRes.status);
+  }
+}
+
+/** Marks a Planner task 100% complete — used when the matching FortunIQ OS task is completed. One-way (FortunIQ OS -> Planner) — see docs/TENDER_PLANNER.md, "Sync direction." */
+export async function completePlannerTask(accessToken: string, plannerTaskId: string): Promise<void> {
+  const res = await fetch(`${GRAPH_BASE}/planner/tasks/${plannerTaskId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new GraphError(`Couldn't read Planner task before completing it: ${res.status}`, res.status);
+  const etag = res.headers.get("etag") ?? res.headers.get("ETag");
+  if (!etag) throw new GraphError("Planner task has no ETag — can't safely update it.", 500);
+
+  const patchRes = await fetch(`${GRAPH_BASE}/planner/tasks/${plannerTaskId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "If-Match": etag },
+    body: JSON.stringify({ percentComplete: 100 }),
+  });
+  if (!patchRes.ok && patchRes.status !== 204) {
+    const body = await patchRes.text();
+    throw new GraphError(`Couldn't complete Planner task: ${patchRes.status} ${body}`, patchRes.status);
+  }
+}

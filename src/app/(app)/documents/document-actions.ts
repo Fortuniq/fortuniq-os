@@ -626,3 +626,88 @@ export async function getDocumentVersionsAction(documentId: string) {
   if (canSeeArchive) return versions;
   return versions.filter((v) => v.isCurrent);
 }
+
+// =========================================================================
+// MANUAL DOCUMENT CREATION — "+ Add Document"
+// =========================================================================
+// See docs/DOCUMENT_HUB_SECURITY.md. Creates a document record directly
+// (rather than only via "Browse SharePoint → catalogue an existing
+// file" or the Attach/Upload flow on an existing row) — Document Name,
+// Category, Owner, Classification, Version, Status, Expiry/Review
+// dates, Description, plus either an uploaded file or a linked existing
+// SharePoint file, all in one step.
+
+export async function createDocumentRecord(formData: FormData): Promise<ActionResult> {
+  try {
+    const permissions = await requirePermissionAction("documents", "Create");
+
+    const name = String(formData.get("name") ?? "").trim();
+    const category = String(formData.get("category") ?? "").trim();
+    const owner = String(formData.get("owner") ?? "").trim();
+    const classification = String(formData.get("classification") ?? "General");
+    const version = String(formData.get("version") ?? "v1").trim() || "v1";
+    const status = String(formData.get("status") ?? "Draft");
+    const expiryDate = String(formData.get("expiryDate") ?? "").trim() || null;
+    const reviewDate = String(formData.get("reviewDate") ?? "").trim() || null;
+    const description = String(formData.get("description") ?? "").trim() || null;
+    const fileMode = String(formData.get("fileMode") ?? "none"); // "none" | "upload" | "existing"
+
+    if (!name || !category) return { error: "Document name and category are required." };
+
+    let sharepointItemId: string | null = null;
+    let sharepointWebUrl: string | null = null;
+
+    if (fileMode === "existing") {
+      sharepointItemId = String(formData.get("sharepointItemId") ?? "") || null;
+      sharepointWebUrl = String(formData.get("webUrl") ?? "") || null;
+    } else if (fileMode === "upload") {
+      const file = formData.get("file") as File | null;
+      if (file && file.size > 0) {
+        if (file.size > 8 * 1024 * 1024) return { error: "File is larger than 8MB — not supported yet." };
+        const accessToken = await requireGraphAccessToken();
+        await ensureDocumentLibraryStructure(accessToken);
+        const folder = await getCategoryFolder(accessToken, category);
+        const bytes = await file.arrayBuffer();
+        const uploaded = await uploadFileToFolder(accessToken, folder.id, file.name, bytes, file.type);
+        sharepointItemId = uploaded.id;
+        sharepointWebUrl = uploaded.webUrl;
+      }
+    }
+
+    const supabase = createServiceClient();
+    const { data: inserted, error } = await supabase.from("documents").insert({
+      name,
+      category,
+      owner,
+      classification,
+      version,
+      status,
+      expiry_date: expiryDate,
+      review_date: reviewDate,
+      description,
+      sharepoint_item_id: sharepointItemId,
+      sharepoint_web_url: sharepointWebUrl,
+      current_version_number: 1,
+      modified_by: permissions.email,
+    }).select("id").single();
+    if (error) return { error: error.message };
+
+    if (sharepointItemId) {
+      await recordNewVersion({
+        documentId: inserted.id, versionNumber: 1, sharepointItemId, sharepointWebUrl,
+        uploadedBy: permissions.email!, uploadedByName: permissions.name ?? null,
+      });
+    }
+
+    await logAudit({
+      actorEmail: permissions.email!, actorName: permissions.name, action: "document_catalogued",
+      targetType: "document", targetId: inserted.id, targetLabel: name,
+      metadata: { manuallyCreated: true, category, classification, hasFile: !!sharepointItemId },
+    });
+
+    revalidatePath("/documents");
+    return {};
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+}

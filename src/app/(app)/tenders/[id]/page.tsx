@@ -9,12 +9,13 @@ export default async function TenderDetailPage({ params }: { params: Promise<{ i
   await requireModuleAccess("tenders");
   const { id } = await params;
   const permissions = await getCurrentUserPermissions();
-  const [tender, canEdit] = await Promise.all([
+  const [tender, canEdit, canApprove] = await Promise.all([
     getTenderDetail(id),
     checkPermissionAction(permissions, "tenders", "Edit"),
+    checkPermissionAction(permissions, "tenders", "Approve"),
   ]);
 
   if (!tender) notFound();
 
-  return <TenderDetailView tender={tender} canEdit={canEdit} sharePointConfigured={isSharePointConfigured} />;
+  return <TenderDetailView tender={tender} canEdit={canEdit} canApprove={canApprove} sharePointConfigured={isSharePointConfigured} />;
 }

@@ -10,34 +10,62 @@
 
 import { hasModuleAccess, type UserPermissions } from "./permissions-core";
 
-export type Classification = "General" | "Internal" | "Confidential" | "Highly Confidential";
+export type Classification = "Public" | "General" | "Internal" | "Confidential" | "Highly Confidential";
 
-export const ALL_CLASSIFICATIONS: Classification[] = ["General", "Internal", "Confidential", "Highly Confidential"];
+export const ALL_CLASSIFICATIONS: Classification[] = ["Public", "Internal", "Confidential", "Highly Confidential"];
 
 export type ClassifiableDocument = {
   classification: Classification;
   authorizedRoles: string[];
   authorizedEmails: string[];
   aiExcluded: boolean;
+  /**
+   * Set when this document belongs to a specific employee's personnel
+   * file (documents.employee_id). See canAccessDocumentByClassification
+   * below — this is checked BEFORE classification, and overrides it:
+   * an employee-linked document is never universally visible no matter
+   * how permissive its classification is. See docs/DOCUMENT_HUB_SECURITY.md.
+   */
+  employeeId: string | null;
 };
 
 /**
- * Can this specific person's role/identity see this document at all,
- * based purely on its classification level and any explicit
- * authorisation — independent of AI-specific concerns like ai_excluded.
- * Used by both the Documents module (so a Confidential HR document isn't
- * even listed to someone unauthorised) and, via canAccessDocumentForAI
- * below, by the AI Assistant.
+ * Can this specific person's role/identity see this document at all —
+ * checked in two layers, in order:
+ *
+ * 1. EMPLOYEE-DOCUMENT OWNERSHIP (checked first, overrides everything
+ *    below it): if this document belongs to a specific employee's
+ *    personnel file, it is ONLY visible to that employee themselves,
+ *    HR/Admin, or Super Admin — regardless of classification. A
+ *    Marketing person must never see an Employment Contract just
+ *    because someone classified it "Internal." This is what makes
+ *    employee documents "security trimmed" rather than merely hidden —
+ *    a document failing this check is excluded from every consumer of
+ *    this function: listings, search, counts, recent documents, the AI
+ *    Assistant, reports, downloads, previews. See
+ *    docs/DOCUMENT_HUB_SECURITY.md.
+ *
+ * 2. CLASSIFICATION + explicit authorisation (the pre-existing rule,
+ *    unchanged): General/Public/Internal are visible to anyone with
+ *    Documents access; Confidential/Highly Confidential need Super
+ *    Admin or explicit authorizedRoles/authorizedEmails.
  */
 export function canAccessDocumentByClassification(
   permissions: UserPermissions,
-  doc: Pick<ClassifiableDocument, "classification" | "authorizedRoles" | "authorizedEmails">
+  doc: Pick<ClassifiableDocument, "classification" | "authorizedRoles" | "authorizedEmails" | "employeeId">,
+  viewerEmployeeId: string | null = null
 ): boolean {
   if (permissions.status !== "active" && permissions.status !== "no-database") {
     return false;
   }
 
-  if (doc.classification === "General" || doc.classification === "Internal") {
+  if (doc.employeeId) {
+    const isOwnDocument = !!viewerEmployeeId && viewerEmployeeId === doc.employeeId;
+    const isHRForThisDoc = permissions.isAdmin || permissions.role === "HR/Admin";
+    if (!isOwnDocument && !isHRForThisDoc) return false;
+  }
+
+  if (doc.classification === "General" || doc.classification === "Public" || doc.classification === "Internal") {
     return true;
   }
 
@@ -65,7 +93,8 @@ export function canAccessDocumentByClassification(
  */
 export function canAccessDocumentForAI(
   permissions: UserPermissions,
-  doc: ClassifiableDocument
+  doc: ClassifiableDocument,
+  viewerEmployeeId: string | null = null
 ): boolean {
   // Hard override — never shown to the AI, regardless of anything else.
   if (doc.aiExcluded) {
@@ -77,7 +106,7 @@ export function canAccessDocumentForAI(
     return false;
   }
 
-  return canAccessDocumentByClassification(permissions, doc);
+  return canAccessDocumentByClassification(permissions, doc, viewerEmployeeId);
 }
 
 /**
@@ -88,7 +117,8 @@ export function canAccessDocumentForAI(
  */
 export function filterDocumentsForAI<T extends ClassifiableDocument>(
   permissions: UserPermissions,
-  documents: T[]
+  documents: T[],
+  viewerEmployeeId: string | null = null
 ): T[] {
-  return documents.filter((doc) => canAccessDocumentForAI(permissions, doc));
+  return documents.filter((doc) => canAccessDocumentForAI(permissions, doc, viewerEmployeeId));
 }

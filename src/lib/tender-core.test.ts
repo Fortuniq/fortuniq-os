@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCompliancePct } from "./tender-core";
+import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness } from "./tender-core";
 
 describe("calculateCompliancePct", () => {
   it("returns null, not 0, for a tender with no checklist yet", () => {
@@ -42,5 +42,52 @@ describe("calculateCompliancePct", () => {
     expect(empty.pct).toBeNull();
     expect(unconfirmed.pct).toBe(0);
     expect(empty.pct).not.toBe(unconfirmed.pct);
+  });
+});
+
+describe("canTransitionTenderStage", () => {
+  it("allows moving forward exactly one stage at a time", () => {
+    expect(canTransitionTenderStage("Drafting", "Pricing")).toBe(true);
+    expect(canTransitionTenderStage("Pricing", "Assessment & Verification")).toBe(true);
+  });
+
+  it("does not allow skipping ahead more than one stage", () => {
+    expect(canTransitionTenderStage("Drafting", "Submission Ready")).toBe(false);
+    expect(canTransitionTenderStage("Drafting", "Submitted")).toBe(false);
+  });
+
+  it("allows moving backward to any earlier stage — work getting sent back", () => {
+    expect(canTransitionTenderStage("Submission Ready", "Pricing")).toBe(true);
+    expect(canTransitionTenderStage("Assessment & Verification", "Drafting")).toBe(true);
+  });
+
+  it("staying in the same stage is always allowed (a no-op save)", () => {
+    expect(canTransitionTenderStage("Pricing", "Pricing")).toBe(true);
+  });
+});
+
+describe("checkSubmissionReadiness", () => {
+  it("is ready when every checklist item is confirmed and compliance is 100%", () => {
+    const result = checkSubmissionReadiness([{ done: true }, { done: true }], 100);
+    expect(result.ready).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it("flags outstanding checklist items", () => {
+    const result = checkSubmissionReadiness([{ done: true }, { done: false }], 100);
+    expect(result.ready).toBe(false);
+    expect(result.issues[0]).toContain("1 checklist item");
+  });
+
+  it("flags compliance under 100%", () => {
+    const result = checkSubmissionReadiness([{ done: true }], 80);
+    expect(result.ready).toBe(false);
+    expect(result.issues.some((i) => i.includes("Compliance"))).toBe(true);
+  });
+
+  it("flags a completely empty checklist as not ready", () => {
+    const result = checkSubmissionReadiness([], null);
+    expect(result.ready).toBe(false);
+    expect(result.issues[0]).toContain("No checklist items");
   });
 });

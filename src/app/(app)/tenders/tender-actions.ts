@@ -6,9 +6,12 @@ import { requirePermissionAction } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { logAISecurityEvent } from "@/lib/ai-security";
 import { auth } from "@/auth";
-import { ensureTenderFolder, isSharePointConfigured, listFolderContents, getDocumentTextContent } from "@/lib/graph";
-import { createTaskForEmployee } from "@/lib/tasks";
+import { ensureTenderFolder, isSharePointConfigured, listFolderContents, getDocumentTextContent, uploadFileToFolder, isPlannerConfigured, TENDER_WORKFLOW_STAGES, type TenderWorkflowStage } from "@/lib/graph";
+import { createTaskForEmployee, createTaskForEmployeeWithId } from "@/lib/tasks";
 import { createCalendarEventForEmployee } from "@/lib/calendar";
+import { canTransitionTenderStage, checkSubmissionReadiness, type ChecklistItem } from "@/lib/tender-core";
+import { syncNewTenderTaskToPlanner, syncTenderStageToPlanner } from "@/lib/tender-planner";
+import { getCurrentUserPermissions } from "@/lib/permissions";
 import Anthropic from "@anthropic-ai/sdk";
 
 /**
@@ -385,4 +388,209 @@ Example: ["B-BBEE Certificate (valid)", "Tax Compliance Certificate", "SBD 4 - D
 
   revalidatePath(`/tenders/${tenderId}`);
   return { itemsAdded: newItems.length };
+}
+
+// =========================================================================
+// TENDER WORKFLOW & PLANNER INTEGRATION — see docs/TENDER_PLANNER.md
+// =========================================================================
+
+type ActionResult = { error?: string };
+
+/**
+ * Moves a tender to a new workflow stage. Forward moves are one step at
+ * a time (canTransitionTenderStage) — never "casually" skipped, per the
+ * brief. Moving specifically INTO "Submission Ready" additionally
+ * requires Approve-level permission AND passing checkSubmissionReadiness()
+ * — the brief's "Stage controls" gate. FortunIQ Intelligence identifying
+ * risks elsewhere in this app never substitutes for this: only a human
+ * with Approve permission, clicking this action, can make the actual
+ * transition — see docs/TENDER_PLANNER.md.
+ */
+export async function moveTenderStage(tenderId: string, newStage: TenderWorkflowStage): Promise<ActionResult> {
+  try {
+    const permissions = await getCurrentUserPermissions();
+    if (!permissions.email) return { error: "You need to be signed in." };
+
+    const supabase = createServiceClient();
+    const { data: tender } = await supabase.from("tenders").select("*").eq("id", tenderId).maybeSingle();
+    if (!tender) return { error: "Tender not found." };
+
+    const currentStage = (tender.stage as TenderWorkflowStage) || "Drafting";
+    if (!canTransitionTenderStage(currentStage, newStage)) {
+      return { error: `Can't move a tender from "${currentStage}" straight to "${newStage}" — stages move one step at a time (or backward). See docs/TENDER_PLANNER.md.` };
+    }
+
+    const movingToSubmissionReady = newStage === "Submission Ready" && currentStage !== "Submission Ready";
+    if (movingToSubmissionReady) {
+      const approvePermissions = await requirePermissionAction("tenders", "Approve");
+      if (!approvePermissions.email) return { error: "Session error." };
+
+      const { data: checklistRows } = await supabase.from("tender_checklist_items").select("done").eq("tender_id", tenderId);
+      const checklist: ChecklistItem[] = (checklistRows ?? []).map((c) => ({ done: !!c.done }));
+      const readiness = checkSubmissionReadiness(checklist, tender.compliance ?? null);
+      if (!readiness.ready) {
+        return { error: `This tender isn't ready for submission yet: ${readiness.issues.join(" ")}` };
+      }
+
+      await supabase.from("tenders").update({
+        stage: newStage, submission_ready_by: approvePermissions.email, submission_ready_at: new Date().toISOString(),
+      }).eq("id", tenderId);
+    } else {
+      await requirePermissionAction("tenders", "Edit");
+      await supabase.from("tenders").update({ stage: newStage }).eq("id", tenderId);
+    }
+
+    await logAudit({
+      actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
+      targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
+      metadata: { field: "workflow_stage", before: currentStage, after: newStage },
+    });
+
+    // Best-effort Planner sync — moves this tender's already-synced
+    // tasks to the matching bucket. Never blocks the stage change above.
+    if (isPlannerConfigured) {
+      const session = await auth();
+      if (session?.accessToken) {
+        await syncTenderStageToPlanner({ tenderId, accessToken: session.accessToken as string, newStage });
+      }
+    }
+
+    revalidatePath(`/tenders/${tenderId}`);
+    revalidatePath("/tenders");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't move this tender's stage." };
+  }
+}
+
+/**
+ * Records the final submission — Submission Date/Time, Submitted By,
+ * Method, Reference, and optionally the Final Tender Pack / Proof of
+ * Submission files — and moves the tender to "Submitted." Only reachable
+ * from "Submission Ready", matching the brief's workflow order.
+ */
+export async function recordTenderSubmission(tenderId: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const permissions = await requirePermissionAction("tenders", "Edit");
+    if (!permissions.email) return { error: "Session error." };
+
+    const supabase = createServiceClient();
+    const { data: tender } = await supabase.from("tenders").select("*").eq("id", tenderId).maybeSingle();
+    if (!tender) return { error: "Tender not found." };
+    if (tender.stage !== "Submission Ready") {
+      return { error: "This tender must be in \"Submission Ready\" before it can be recorded as submitted." };
+    }
+
+    const submissionMethod = String(formData.get("submissionMethod") ?? "").trim() || null;
+    const submissionReference = String(formData.get("submissionReference") ?? "").trim() || null;
+
+    let finalPackItemId: string | null = null, finalPackWebUrl: string | null = null;
+    let proofItemId: string | null = null, proofWebUrl: string | null = null;
+
+    if (isSharePointConfigured) {
+      const session = await auth();
+      if (session?.accessToken) {
+        const accessToken = session.accessToken as string;
+        const folder = await ensureTenderFolder(accessToken, tender.ref, tender.title);
+
+        const finalPackFile = formData.get("finalPack") as File | null;
+        if (finalPackFile && finalPackFile.size > 0) {
+          const bytes = await finalPackFile.arrayBuffer();
+          const uploaded = await uploadFileToFolder(accessToken, folder.id, finalPackFile.name, bytes, finalPackFile.type);
+          finalPackItemId = uploaded.id;
+          finalPackWebUrl = uploaded.webUrl;
+        }
+        const proofFile = formData.get("proofOfSubmission") as File | null;
+        if (proofFile && proofFile.size > 0) {
+          const bytes = await proofFile.arrayBuffer();
+          const uploaded = await uploadFileToFolder(accessToken, folder.id, proofFile.name, bytes, proofFile.type);
+          proofItemId = uploaded.id;
+          proofWebUrl = uploaded.webUrl;
+        }
+      }
+    }
+
+    await supabase.from("tenders").update({
+      stage: "Submitted",
+      submitted_at: new Date().toISOString(),
+      submitted_by: permissions.email,
+      submission_method: submissionMethod,
+      submission_reference: submissionReference,
+      ...(finalPackItemId ? { final_pack_sharepoint_item_id: finalPackItemId, final_pack_sharepoint_web_url: finalPackWebUrl } : {}),
+      ...(proofItemId ? { proof_of_submission_sharepoint_item_id: proofItemId, proof_of_submission_sharepoint_web_url: proofWebUrl } : {}),
+    }).eq("id", tenderId);
+
+    await logAudit({
+      actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
+      targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
+      metadata: { field: "submission", submissionMethod, submissionReference },
+    });
+
+    if (isPlannerConfigured) {
+      const session = await auth();
+      if (session?.accessToken) {
+        await syncTenderStageToPlanner({ tenderId, accessToken: session.accessToken as string, newStage: "Submitted" });
+      }
+    }
+
+    revalidatePath(`/tenders/${tenderId}`);
+    revalidatePath("/tenders");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't record this tender's submission." };
+  }
+}
+
+/**
+ * Adds a task to a tender — the brief's "Tender Tasks" (Complete
+ * technical response, Obtain supplier quotation, etc.), reusing the
+ * single unified task layer (see docs/EMPLOYEE_DASHBOARD.md) rather
+ * than a separate tender_tasks system. Best-effort synced to Microsoft
+ * Planner in the bucket matching the tender's current stage.
+ */
+export async function addTenderTask(tenderId: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const permissions = await requirePermissionAction("tenders", "Edit");
+    if (!permissions.email) return { error: "Session error." };
+
+    const supabase = createServiceClient();
+    const { data: tender } = await supabase.from("tenders").select("ref, title, stage").eq("id", tenderId).maybeSingle();
+    if (!tender) return { error: "Tender not found." };
+
+    const title = String(formData.get("title") ?? "").trim();
+    const assigneeEmail = String(formData.get("assigneeEmail") ?? "").trim().toLowerCase() || permissions.email;
+    const dueDate = String(formData.get("dueDate") ?? "").trim() || undefined;
+    const priority = (String(formData.get("priority") ?? "Medium")) as "High" | "Medium" | "Low";
+    const notes = String(formData.get("notes") ?? "").trim() || undefined;
+    if (!title) return { error: "Task title is required." };
+
+    const stage = (tender.stage as TenderWorkflowStage) || "Drafting";
+
+    const taskId = await createTaskForEmployeeWithId({
+      title, employeeEmail: assigneeEmail, moduleKey: "tenders", recordId: tenderId,
+      recordUrl: `/tenders/${tenderId}`, dueDate, priority, workflowStage: stage,
+      createdBy: permissions.email, notes,
+    });
+
+    if (taskId && isPlannerConfigured) {
+      const session = await auth();
+      if (session?.accessToken) {
+        await syncNewTenderTaskToPlanner({
+          taskId, accessToken: session.accessToken as string,
+          title: `${tender.ref}: ${title}`, stage, dueDate,
+        });
+      }
+    }
+
+    await logAudit({
+      actorEmail: permissions.email, actorName: permissions.name, action: "document_catalogued",
+      targetType: "tender", targetId: tenderId, targetLabel: `${tender.ref} — ${title}`,
+      metadata: { field: "tender_task_added", assigneeEmail },
+    });
+
+    revalidatePath(`/tenders/${tenderId}`);
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't add this task." };
+  }
 }

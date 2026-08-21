@@ -29,9 +29,13 @@ type ChecklistItem = { item: string; done: boolean };
 const TENDER_BOX_URL =
   "https://iqfuels.sharepoint.com/:f:/s/FortunIQDocuments/IgBnsyJtiKwQTIqoz7J5F-u3ASuq5RRrYVK1mu13szDkpeA?e=h5XHOL";
 
-export function TendersView({ tenders, checklist, canManage }: { tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean }) {
+export function TendersView({ tenders, checklist, canManage, workflowCounts }: {
+  tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean;
+  workflowCounts: { drafting: number; pricing: number; awaitingAssessment: number; submissionReady: number; dueThisWeek: number; overdueTasks: number };
+}) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTender, setEditingTender] = useState<Tender | null>(null);
+  const [stageFilter, setStageFilter] = useState<string | null>(null);
 
   const open = tenders.filter((t) => t.status === "Open");
   const won = tenders.filter((t) => t.stage === "Closed — Won").length;
@@ -122,13 +126,35 @@ export function TendersView({ tenders, checklist, canManage }: { tenders: Tender
         <StatCard label="Bid Library" value="34" sub="Previous submissions" icon={Archive} />
       </div>
 
+      {/* Tender workflow indicators — click a metric to filter the register below. See docs/TENDER_PLANNER.md. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        {[
+          { label: "Drafting", value: workflowCounts.drafting, stage: "Drafting" },
+          { label: "Pricing", value: workflowCounts.pricing, stage: "Pricing" },
+          { label: "Awaiting Assessment", value: workflowCounts.awaitingAssessment, stage: "Assessment & Verification" },
+          { label: "Submission Ready", value: workflowCounts.submissionReady, stage: "Submission Ready" },
+          { label: "Due This Week", value: workflowCounts.dueThisWeek, stage: null },
+          { label: "Overdue Tasks", value: workflowCounts.overdueTasks, stage: null },
+        ].map((m) => (
+          <button
+            key={m.label}
+            onClick={() => m.stage && setStageFilter(stageFilter === m.stage ? null : m.stage)}
+            className={`text-left p-3 rounded-lg border transition-colors ${stageFilter === m.stage && m.stage ? "border-orange bg-orange/5" : "border-border hover:border-orange"}`}
+          >
+            <p className="text-lg font-black text-navy">{m.value}</p>
+            <p className="text-[11px] text-grey">{m.label}</p>
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Tender Register</CardTitle>
+            <CardTitle>Tender Register{stageFilter ? ` — ${stageFilter}` : ""}</CardTitle>
+            {stageFilter && <button onClick={() => setStageFilter(null)} className="text-xs text-orange hover:underline">Clear filter</button>}
           </CardHeader>
           <CardBody className="pt-2">
-            <DataTable columns={columns} data={tenders} />
+            <DataTable columns={columns} data={stageFilter ? tenders.filter((t) => t.stage === stageFilter) : tenders} />
           </CardBody>
         </Card>
 
