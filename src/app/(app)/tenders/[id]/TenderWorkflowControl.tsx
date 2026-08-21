@@ -5,12 +5,13 @@ import { ArrowRight, ArrowLeft, Send, Upload } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { moveTenderStage, recordTenderSubmission } from "../tender-actions";
+import { normalizeTenderStage } from "@/lib/tender-core";
 
 const STAGES = ["Drafting", "Pricing", "Assessment & Verification", "Submission Ready", "Submitted"] as const;
 type Stage = (typeof STAGES)[number];
 
 export function TenderWorkflowControl({ tenderId, currentStage, canEdit, canApprove }: { tenderId: string; currentStage: string; canEdit: boolean; canApprove: boolean }) {
-  const stage = (STAGES.includes(currentStage as Stage) ? currentStage : "Drafting") as Stage;
+  const stage = normalizeTenderStage(currentStage) as Stage;
   const idx = STAGES.indexOf(stage);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();

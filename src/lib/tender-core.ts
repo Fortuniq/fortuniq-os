@@ -48,6 +48,32 @@ export const TENDER_WORKFLOW_STAGE_ORDER: TenderWorkflowStage[] = [
 ];
 
 /**
+ * Normalises a tender's raw `stage` column value to one of the 5 real
+ * workflow stages, defaulting to "Drafting" for anything else. This
+ * exists because `tenders.stage` is deliberately NOT database-
+ * constrained (see migration_v23's comment — some pre-existing tenders
+ * have free-text values like "Drafting - SARS Code" from before this
+ * workflow existed), so a raw value read straight from the database can
+ * be something outside the 5-value set entirely.
+ *
+ * BOTH the UI (TenderWorkflowControl.tsx) and the server action
+ * (moveTenderStage() in tender-actions.ts) call this SAME function
+ * before doing anything else with a tender's stage — that's what
+ * guarantees they can never disagree about what stage a tender is
+ * "really" in. Before this existed, the UI computed its own inline
+ * fallback separately from what the server compared against, which is
+ * exactly the kind of drift that caused a tender showing "Drafting" in
+ * the UI to be rejected server-side for not matching the literal string
+ * "Drafting." See docs/TENDER_PLANNER.md.
+ */
+export function normalizeTenderStage(rawStage: string | null | undefined): TenderWorkflowStage {
+  if (rawStage && (TENDER_WORKFLOW_STAGE_ORDER as string[]).includes(rawStage)) {
+    return rawStage as TenderWorkflowStage;
+  }
+  return "Drafting";
+}
+
+/**
  * Stages move forward one step at a time, or backward to any earlier
  * stage (e.g. Assessment finds a problem and sends work back to
  * Pricing) — but never skip ahead. "Stage should not be changed

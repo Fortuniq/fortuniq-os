@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { ensureTenderFolder, isSharePointConfigured, listFolderContents, getDocumentTextContent, uploadFileToFolder, isPlannerConfigured, TENDER_WORKFLOW_STAGES, type TenderWorkflowStage } from "@/lib/graph";
 import { createTaskForEmployee, createTaskForEmployeeWithId } from "@/lib/tasks";
 import { createCalendarEventForEmployee } from "@/lib/calendar";
-import { canTransitionTenderStage, checkSubmissionReadiness, type ChecklistItem } from "@/lib/tender-core";
+import { canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, type ChecklistItem } from "@/lib/tender-core";
 import { syncNewTenderTaskToPlanner, syncTenderStageToPlanner } from "@/lib/tender-planner";
 import { getCurrentUserPermissions } from "@/lib/permissions";
 import Anthropic from "@anthropic-ai/sdk";
@@ -415,7 +415,7 @@ export async function moveTenderStage(tenderId: string, newStage: TenderWorkflow
     const { data: tender } = await supabase.from("tenders").select("*").eq("id", tenderId).maybeSingle();
     if (!tender) return { error: "Tender not found." };
 
-    const currentStage = (tender.stage as TenderWorkflowStage) || "Drafting";
+    const currentStage = normalizeTenderStage(tender.stage);
     if (!canTransitionTenderStage(currentStage, newStage)) {
       return { error: `Can't move a tender from "${currentStage}" straight to "${newStage}" — stages move one step at a time (or backward). See docs/TENDER_PLANNER.md.` };
     }
@@ -564,7 +564,7 @@ export async function addTenderTask(tenderId: string, formData: FormData): Promi
     const notes = String(formData.get("notes") ?? "").trim() || undefined;
     if (!title) return { error: "Task title is required." };
 
-    const stage = (tender.stage as TenderWorkflowStage) || "Drafting";
+    const stage = normalizeTenderStage(tender.stage);
 
     const taskId = await createTaskForEmployeeWithId({
       title, employeeEmail: assigneeEmail, moduleKey: "tenders", recordId: tenderId,

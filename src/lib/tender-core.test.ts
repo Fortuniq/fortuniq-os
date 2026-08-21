@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness } from "./tender-core";
+import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage } from "./tender-core";
 
 describe("calculateCompliancePct", () => {
   it("returns null, not 0, for a tender with no checklist yet", () => {
@@ -89,5 +89,23 @@ describe("checkSubmissionReadiness", () => {
     const result = checkSubmissionReadiness([], null);
     expect(result.ready).toBe(false);
     expect(result.issues[0]).toContain("No checklist items");
+  });
+});
+
+describe("normalizeTenderStage", () => {
+  it("passes through an exact valid stage unchanged", () => {
+    expect(normalizeTenderStage("Pricing")).toBe("Pricing");
+    expect(normalizeTenderStage("Submitted")).toBe("Submitted");
+  });
+
+  it("defaults legacy free-text stage values to Drafting — this is the exact bug that was reported", () => {
+    expect(normalizeTenderStage("Drafting - SARS Code")).toBe("Drafting");
+    expect(normalizeTenderStage("Closed — Won")).toBe("Drafting");
+  });
+
+  it("defaults null/undefined/empty to Drafting", () => {
+    expect(normalizeTenderStage(null)).toBe("Drafting");
+    expect(normalizeTenderStage(undefined)).toBe("Drafting");
+    expect(normalizeTenderStage("")).toBe("Drafting");
   });
 });
