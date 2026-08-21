@@ -185,7 +185,7 @@ function UploadDocumentModal({ employeeId, onClose }: { employeeId: string; onCl
           <div>
             <label className="text-xs font-medium text-grey block mb-1">File</label>
             <input type="file" name="file" required className="w-full text-sm" />
-            <p className="text-[11px] text-light-grey mt-1">Files up to 4MB are supported.</p>
+            <p className="text-[11px] text-light-grey mt-1">Files up to 8MB are supported.</p>
           </div>
           <button type="submit" disabled={isPending} className="w-full text-sm font-semibold text-white bg-navy px-4 py-2 rounded-lg hover:bg-orange transition-colors disabled:opacity-50">
             {isPending ? "Uploading…" : "Upload"}

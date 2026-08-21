@@ -249,7 +249,7 @@ function UploadPanel({ isPending, onBack, onSubmit }: { isPending: boolean; onBa
         placeholder="What changed in this version?"
         className="w-full text-sm px-3 py-2 rounded-lg border border-border mb-3"
       />
-      <p className="text-xs text-light-grey mb-3">Files up to 4MB are supported.</p>
+      <p className="text-xs text-light-grey mb-3">Files up to 8MB are supported.</p>
       <button type="submit" disabled={isPending} className="text-sm font-semibold text-white bg-navy px-4 py-2 rounded-lg hover:bg-orange transition-colors disabled:opacity-50 flex items-center gap-2">
         {isPending ? <><RefreshCw className="w-4 h-4 animate-spin" /> Uploading…</> : "Upload"}
       </button>

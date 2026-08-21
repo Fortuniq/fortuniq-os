@@ -509,14 +509,33 @@ export async function getArchiveFolder(accessToken: string, category: string): P
 }
 
 /**
- * Uploads a file's raw bytes into a specific folder using SharePoint's
- * simple-upload endpoint. This endpoint supports files up to 4MB — the
- * overwhelming majority of policy/SOP/certificate/licence documents.
- * Larger files (e.g. a lengthy scanned contract) would need a resumable
- * upload session instead; that's a known, documented limitation rather
- * than a silent failure — see docs/DOCUMENT_CONTROL.md, "Upload size
- * limit," and the friendly error uploadNewDocumentVersion() raises when
- * this is hit.
+ * Uploads a file's raw bytes into a specific folder — see
+ * uploadFileToFolder() below for the full explanation of how files up
+ * to 8MB are handled (simple upload under 4MB, chunked upload session
+ * above it). See docs/DOCUMENT_CONTROL.md, "Upload size limit."
+ */
+const SIMPLE_UPLOAD_LIMIT = 4 * 1024 * 1024; // Microsoft Graph's hard limit for PUT .../content — not a FortunIQ OS choice, see below.
+const MAX_UPLOAD_SIZE = 8 * 1024 * 1024; // FortunIQ OS's own ceiling — see docs/DOCUMENT_CONTROL.md, "Upload size limit."
+const UPLOAD_SESSION_CHUNK_SIZE = 5 * 1024 * 1024; // Must be a multiple of 320 KiB — 5MB = 16 × 320KiB exactly, and within Microsoft's recommended 5-10 MiB fragment range.
+
+/**
+ * Uploads a file to a folder, choosing the right Graph API method based
+ * on size — transparently to every caller, none of which need to know
+ * or care which one ran:
+ *   - 4MB or under: the simple PUT .../content call (uploadFileToFolder
+ *     always used before).
+ *   - Over 4MB, up to FortunIQ OS's own 8MB ceiling: a chunked "upload
+ *     session" (createUploadSession + sequential PUTs), which is
+ *     Microsoft's own documented, supported mechanism for anything
+ *     larger than the simple-upload limit.
+ *
+ * The 4MB simple-upload ceiling is a genuine Microsoft Graph API
+ * constraint (PUT .../content rejects anything larger, independent of
+ * anything in this app), NOT a number FortunIQ OS chose — see
+ * docs/DOCUMENT_CONTROL.md, "Upload size limit," for the full
+ * reasoning and links. Simply raising a size check without this
+ * function would not have worked: SharePoint itself would still reject
+ * a 5–8MB file sent via the simple PUT call.
  */
 export async function uploadFileToFolder(
   accessToken: string,
@@ -525,17 +544,88 @@ export async function uploadFileToFolder(
   bytes: ArrayBuffer,
   contentType: string
 ): Promise<SharePointFile> {
-  if (bytes.byteLength > 4 * 1024 * 1024) {
-    throw new GraphError("File is larger than 4MB — SharePoint simple upload doesn't support this yet in FortunIQ OS.", 413);
+  if (bytes.byteLength > MAX_UPLOAD_SIZE) {
+    throw new GraphError(`File is larger than ${MAX_UPLOAD_SIZE / (1024 * 1024)}MB — not supported yet in FortunIQ OS.`, 413);
   }
+  if (bytes.byteLength <= SIMPLE_UPLOAD_LIMIT) {
+    const { driveId } = await resolveSharePointSite(accessToken);
+    const safeName = sanitiseFolderName(fileName);
+    const data = await graphFetch(
+      `/drives/${driveId}/items/${folderId}:/${encodePathSegment(safeName)}:/content`,
+      accessToken,
+      { method: "PUT", headers: { "Content-Type": contentType || "application/octet-stream" }, body: bytes }
+    );
+    return mapDriveItem(data);
+  }
+  return uploadLargeFileToFolder(accessToken, folderId, fileName, bytes);
+}
+
+/**
+ * Chunked upload for files between 4MB and FortunIQ OS's 8MB ceiling,
+ * using Microsoft Graph's createUploadSession — the documented,
+ * Microsoft-supported way to upload anything over the simple-upload
+ * limit. See https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
+ * and docs/DOCUMENT_CONTROL.md.
+ *
+ * Chunk requests go directly to the pre-authenticated uploadUrl Graph
+ * returns — deliberately WITHOUT the app's own Authorization header,
+ * since that URL is already authenticated for this specific upload and
+ * often points at a different host than graph.microsoft.com; sending
+ * an unrelated bearer token there is unnecessary and, on some Graph
+ * endpoints, has been reported to cause spurious auth failures.
+ */
+async function uploadLargeFileToFolder(
+  accessToken: string,
+  folderId: string,
+  fileName: string,
+  bytes: ArrayBuffer
+): Promise<SharePointFile> {
   const { driveId } = await resolveSharePointSite(accessToken);
   const safeName = sanitiseFolderName(fileName);
-  const data = await graphFetch(
-    `/drives/${driveId}/items/${folderId}:/${encodePathSegment(safeName)}:/content`,
+
+  const session = await graphFetch(
+    `/drives/${driveId}/items/${folderId}:/${encodePathSegment(safeName)}:/createUploadSession`,
     accessToken,
-    { method: "PUT", headers: { "Content-Type": contentType || "application/octet-stream" }, body: bytes }
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "replace" } }),
+    }
   );
-  return mapDriveItem(data);
+  const uploadUrl = session.uploadUrl as string;
+  const totalSize = bytes.byteLength;
+
+  let offset = 0;
+  let lastResponseBody: Record<string, unknown> | null = null;
+
+  while (offset < totalSize) {
+    const end = Math.min(offset + UPLOAD_SESSION_CHUNK_SIZE, totalSize);
+    const chunk = bytes.slice(offset, end);
+
+    const res = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Length": String(chunk.byteLength),
+        "Content-Range": `bytes ${offset}-${end - 1}/${totalSize}`,
+      },
+      body: chunk,
+    });
+
+    if (!res.ok && res.status !== 202) {
+      const body = await res.text();
+      throw new GraphError(`SharePoint upload session error ${res.status}: ${body}`, res.status);
+    }
+    if (res.status !== 202) {
+      // 200/201 on the final chunk — the file is fully committed, body is the driveItem.
+      lastResponseBody = await res.json();
+    }
+    offset = end;
+  }
+
+  if (!lastResponseBody) {
+    throw new GraphError("Upload session completed without returning the uploaded file.", 500);
+  }
+  return mapDriveItem(lastResponseBody);
 }
 
 /**

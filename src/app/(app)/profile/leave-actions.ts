@@ -33,7 +33,7 @@ export async function requestLeaveAction(formData: FormData): Promise<ActionResu
     let attachmentWebUrl: string | undefined;
     const file = formData.get("attachment") as File | null;
     if (file && file.size > 0) {
-      if (file.size > 4 * 1024 * 1024) return { error: "Attachment is larger than 4MB — not supported yet." };
+      if (file.size > 8 * 1024 * 1024) return { error: "Attachment is larger than 8MB — not supported yet." };
       if (!isSharePointConfigured) return { error: "SharePoint isn't connected — can't attach a file right now. Try submitting without an attachment." };
       const session = await auth();
       if (!session?.accessToken) return { error: "Your Microsoft session needs refreshing — try signing out and back in." };

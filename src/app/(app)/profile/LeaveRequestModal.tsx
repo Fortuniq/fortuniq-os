@@ -65,7 +65,7 @@ export function LeaveRequestModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="text-xs font-medium text-grey block mb-1">Attachment (optional)</label>
             <input type="file" name="attachment" className="w-full text-sm" />
-            <p className="text-[11px] text-light-grey mt-1">Files up to 4MB are supported.</p>
+            <p className="text-[11px] text-light-grey mt-1">Files up to 8MB are supported.</p>
           </div>
           <button type="submit" disabled={isPending || (workingDays !== null && workingDays <= 0)} className="w-full text-sm font-semibold text-white bg-navy px-4 py-2 rounded-lg hover:bg-orange transition-colors disabled:opacity-50">
             {isPending ? "Submitting…" : "Submit Request"}

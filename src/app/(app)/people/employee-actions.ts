@@ -328,7 +328,7 @@ export async function uploadEmployeeDocument(formData: FormData): Promise<{ erro
 
     if (!employeeId || !name || !category) return { error: "Name and category are required." };
     if (!file || file.size === 0) return { error: "Choose a file to upload." };
-    if (file.size > 4 * 1024 * 1024) return { error: "File is larger than 4MB — not supported yet." };
+    if (file.size > 8 * 1024 * 1024) return { error: "File is larger than 8MB — not supported yet." };
     if (!isSharePointConfigured) return { error: "SharePoint isn't connected yet." };
 
     const session = await auth();

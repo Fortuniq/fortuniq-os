@@ -229,31 +229,47 @@ Documents Delete permission **and** Super Admin, as an extra guardrail.
 
 ## Upload size limit
 
-SharePoint's simple-upload endpoint (used by `uploadFileToFolder()`)
-supports files up to 4MB — the overwhelming majority of policy/SOP/
-certificate/licence documents. A larger file (e.g. a lengthy scanned
-contract) raises a clear, friendly error rather than failing silently.
-Supporting larger files would need a resumable upload session — a
-documented follow-up, not implemented in this pass.
+FortunIQ OS supports files up to **8MB** — comfortably covering the
+overwhelming majority of policy/SOP/certificate/licence/contract
+documents. A larger file raises a clear, friendly error rather than
+failing silently.
 
-**Next.js Server Action body limit**: Next.js caps the raw request body
-of any Server Action at 1MB by default, independent of this app's own
-4MB check. Without raising that framework-level limit, any file between
-1MB and 4MB would be rejected by Next.js itself before ever reaching
-the application's size check — and on Netlify's Next.js runtime
-specifically, that rejection surfaced as a raw crash
-(`Cannot set property socket of #<ComputeJsIncomingMessage>...`)
-instead of a clean error. Fixed by setting
-`experimental.serverActions.bodySizeLimit: "5mb"` in `next.config.ts`,
-giving headroom above the real 4MB ceiling so the application's own
-friendlier size check is what actually fires for a genuinely oversized
-file. If this crash recurs on Netlify specifically even after this
-change, some reports suggest `bodySizeLimit` doesn't always take effect
-on certain serverless/edge runtimes — the reliable fallback is moving
-file bytes off Server Actions entirely and into a dedicated API Route
-Handler (this app already has a working precedent:
-`/api/sharepoint/documents-browse`), which isn't subject to the same
-Server-Action-specific body limit.
+**How this actually works, technically**: Microsoft Graph's simple
+upload endpoint (`PUT .../content`) has a hard 4MB limit — this is a
+genuine Microsoft constraint, not a number FortunIQ OS chose, and
+simply raising an application-level size check without more would not
+have worked, since SharePoint itself rejects anything larger sent that
+way. `uploadFileToFolder()` in `graph.ts` handles this transparently:
+files 4MB and under use the simple upload; anything from 4MB up to the
+8MB ceiling automatically uses Microsoft's documented chunked "upload
+session" mechanism instead (`createUploadSession` + sequential 5MB PUT
+requests to the pre-authenticated `uploadUrl` it returns). Every caller
+— Documents Hub, Employee Document Centre, Leave request attachments —
+gets this transparently through the one function; none of them know or
+need to know which underlying Graph mechanism actually ran.
+
+Going beyond 8MB would mean raising `MAX_UPLOAD_SIZE` in `graph.ts` and
+possibly the chunk size/count — Graph itself supports files far larger
+than 8MB via the same upload-session mechanism (SharePoint's own ceiling
+is around 250MB), so 8MB is a FortunIQ OS product decision, not a
+technical ceiling, should this need to grow further.
+
+**Next.js Server Action body limit**: independent of the above,
+Next.js caps every Server Action's raw request body at 1MB by default.
+`next.config.ts` sets `experimental.serverActions.bodySizeLimit: "10mb"`
+— comfortable headroom above the real 8MB file ceiling for
+multipart/form-data overhead and the other form fields submitted
+alongside a file. Without this, files over 1MB were rejected at the
+Next.js framework level before ever reaching the application's own
+size check, and on Netlify's Next.js runtime specifically, that
+rejection surfaced as a raw crash (`Cannot set property socket of
+#<ComputeJsIncomingMessage>...`) instead of a clean error. If this
+recurs on Netlify even with the raised limit, some reports suggest
+`bodySizeLimit` doesn't reliably take effect on every serverless/edge
+runtime — the fallback would be moving file bytes off Server Actions
+entirely into a dedicated API Route Handler (this app already has a
+working precedent: `/api/sharepoint/documents-browse`), which isn't
+subject to the same Server-Action-specific body limit.
 
 ## Known limitations / deliberate scope boundaries
 
@@ -263,7 +279,7 @@ Server-Action-specific body limit.
   file if SharePoint's search index returns it. A follow-up: filter
   search results by URL path the same way category browsing is
   structurally excluded.
-- **No resumable/chunked upload** for files over 4MB.
+- **No chunked upload beyond 8MB** — files over 8MB raise a clear error rather than failing silently; see "Upload size limit" above for what raising this further would take.
 - **Outlook/Teams notifications for approvals** aren't wired up —
   approval requests currently only surface via the Documents Hub itself,
   not a notification.
