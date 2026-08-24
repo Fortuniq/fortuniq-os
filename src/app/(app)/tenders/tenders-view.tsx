@@ -11,6 +11,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { formatDate, formatZARCompact } from "@/lib/format";
 import { TenderFormModal } from "./TenderFormModal";
 import { deleteTender } from "./tender-actions";
+import { TeamAssignmentsWidget } from "./TeamAssignmentsWidget";
 
 type Tender = {
   id: string | number;
@@ -29,9 +30,11 @@ type ChecklistItem = { item: string; done: boolean };
 const TENDER_BOX_URL =
   "https://iqfuels.sharepoint.com/:f:/s/FortunIQDocuments/IgBnsyJtiKwQTIqoz7J5F-u3ASuq5RRrYVK1mu13szDkpeA?e=h5XHOL";
 
-export function TendersView({ tenders, checklist, canManage, workflowCounts }: {
+export function TendersView({ tenders, checklist, canManage, workflowCounts, teamAssignments, showTeamAssignments }: {
   tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean;
   workflowCounts: { drafting: number; pricing: number; awaitingAssessment: number; submissionReady: number; dueThisWeek: number; overdueTasks: number };
+  teamAssignments: { id: string; tenderId: string; tenderRef: string; tenderTitle: string; stage: string; ownerEmail: string; ownerName: string | null; dueDate: string | null; priority: string; status: string; compliance: number }[];
+  showTeamAssignments: boolean;
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTender, setEditingTender] = useState<Tender | null>(null);
@@ -146,6 +149,8 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts }: {
           </button>
         ))}
       </div>
+
+      {showTeamAssignments && <TeamAssignmentsWidget assignments={teamAssignments} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">

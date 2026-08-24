@@ -14,6 +14,7 @@ import { MyAttendanceHistory } from "./MyAttendanceHistory";
 import { MyTasksCard } from "./MyTasksCard";
 import { DocumentExpiryCard } from "./DocumentExpiryCard";
 import { HCMRemindersCard } from "./HCMRemindersCard";
+import { MyTenderTasksCard } from "./MyTenderTasksCard";
 import type { MyTask, TaskGroups } from "@/lib/tasks-core";
 import type { CalendarEvent } from "@/lib/calendar";
 import type { AttendanceRecord } from "@/lib/attendance-core";
@@ -31,6 +32,7 @@ type DashboardProps = {
   attendanceToday: AttendanceRecord | null;
   attendanceHistory: AttendanceRecord[];
   expiringDocuments: ExpiringDoc[];
+  myTenderAssignments: { id: string; tenderId: string; tenderRef: string; tenderTitle: string; stage: string; dueDate: string | null; priority: string; overdue: boolean }[];
   hcmReminders: {
     upcomingLeave: { leaveType: string; startDate: string; endDate: string }[];
     myPendingLeaveCount: number;
@@ -69,7 +71,7 @@ function eventDayLabel(dateStr: string): string {
 }
 
 export function DashboardView({
-  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, hcmReminders, workflowByModule,
+  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowByModule,
   moduleCards, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   const workflowEntries = Object.entries(workflowByModule).filter(([, count]) => count > 0);
@@ -162,6 +164,7 @@ export function DashboardView({
         <MyAttendanceHistory records={attendanceHistory} />
         <DocumentExpiryCard documents={expiringDocuments} />
         <HCMRemindersCard reminders={hcmReminders} isHR={role === "HR/Admin" || hasBroadVisibility} />
+        <MyTenderTasksCard assignments={myTenderAssignments} />
       </div>
 
       {/* Relevant module cards — only modules this person is permitted to access */}

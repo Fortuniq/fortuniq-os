@@ -120,3 +120,46 @@ export function checkSubmissionReadiness(checklist: ChecklistItem[], complianceP
   }
   return { ready: issues.length === 0, issues };
 }
+
+// =========================================================================
+// STAGE OWNERSHIP & ASSIGNMENT — see docs/TENDER_ASSIGNMENT.md
+// =========================================================================
+
+export type StageAssignmentStatus = "Active" | "Completed" | "Reassigned";
+export type AssignmentPriority = "High" | "Medium" | "Low";
+
+export type StageAssignment = {
+  stage: TenderWorkflowStage;
+  ownerEmail: string;
+  dueDate: string | null;
+  status: StageAssignmentStatus;
+};
+
+/**
+ * A stage is Overdue purely as a DISPLAY computation — never a stored
+ * status — the same "compute at read time from a due date, don't rely
+ * on a background job" pattern already used for document expiry
+ * (isExpiringSoon/isExpired) and dashboard reminders (isWithinDays)
+ * elsewhere in this app. Only an Active assignment with a past due date
+ * counts; a Completed or Reassigned assignment is never "overdue" no
+ * matter how late it finished.
+ */
+export function isStageOverdue(assignment: Pick<StageAssignment, "status" | "dueDate">, today: Date = new Date()): boolean {
+  if (assignment.status !== "Active" || !assignment.dueDate) return false;
+  const due = new Date(assignment.dueDate + "T23:59:59");
+  return due.getTime() < today.getTime();
+}
+
+/**
+ * "The stage cannot become active until an owner has been assigned" —
+ * this is the one function that actually enforces that gate, called
+ * before any stage transition is allowed to complete. Deliberately
+ * strict: a blank or whitespace-only email doesn't count as an
+ * assignment.
+ */
+export function validateStageAssignment(ownerEmail: string | null | undefined): { valid: boolean; error?: string } {
+  if (!ownerEmail || !ownerEmail.trim()) {
+    return { valid: false, error: "You must assign this stage to an employee before it can become active." };
+  }
+  return { valid: true };
+}

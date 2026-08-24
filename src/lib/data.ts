@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import * as mock from "@/lib/mock-data";
-import { calculateCompliancePct } from "@/lib/tender-core";
+import { calculateCompliancePct, isStageOverdue } from "@/lib/tender-core";
 import { hasModuleAccess, type UserPermissions } from "@/lib/permissions";
 import { getMyTasks, getOrganisationTaskStats } from "@/lib/tasks";
 import { getMyUpcomingEvents } from "@/lib/calendar";
@@ -8,6 +8,7 @@ import { getTodayAttendance, getMyAttendanceHistory } from "@/lib/attendance";
 import { groupMyTasks } from "@/lib/tasks-core";
 import { getMyLeaveRequests, getPendingLeaveRequests } from "@/lib/leave";
 import { isWithinDays, isAnniversaryToday } from "@/lib/hcm-core";
+import { getMyTenderStageAssignments } from "@/lib/tender-assignments";
 import { NAV_ITEMS } from "@/lib/nav";
 
 /**
@@ -563,13 +564,14 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
     permissions.email ? getMyAttendanceHistory(permissions.email, 5) : Promise.resolve([]),
     hasModuleAccess(permissions, "documents") ? getExpiringDocuments() : Promise.resolve([]),
     permissions.email ? getEmployeeProfile((await getEmployeeByEmail(permissions.email))?.id ?? "") : Promise.resolve(null),
+    hasModuleAccess(permissions, "tenders") && permissions.email ? getMyTenderStageAssignments(permissions.email) : Promise.resolve([]),
   ]);
 
   // HCM Phase 3 dashboard reminders — see docs/HCM_PHASE3.md, "Dashboard."
@@ -633,6 +635,10 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     attendanceHistory,
     expiringDocuments,
     hcmReminders,
+    myTenderAssignments: myTenderAssignments.map((a) => ({
+      id: a.id, tenderId: a.tenderId, tenderRef: a.tenderRef, tenderTitle: a.tenderTitle,
+      stage: a.stage, dueDate: a.dueDate, priority: a.priority, overdue: isStageOverdue(a),
+    })),
     workflowByModule: Object.fromEntries(workflowByModule),
     moduleCards,
     hasBroadVisibility,

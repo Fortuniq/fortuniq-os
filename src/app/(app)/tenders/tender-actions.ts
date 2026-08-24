@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { ensureTenderFolder, isSharePointConfigured, listFolderContents, getDocumentTextContent, uploadFileToFolder, isPlannerConfigured, TENDER_WORKFLOW_STAGES, type TenderWorkflowStage } from "@/lib/graph";
 import { createTaskForEmployee, createTaskForEmployeeWithId } from "@/lib/tasks";
 import { createCalendarEventForEmployee } from "@/lib/calendar";
-import { canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, type ChecklistItem } from "@/lib/tender-core";
+import { canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, validateStageAssignment, type ChecklistItem } from "@/lib/tender-core";
 import { syncNewTenderTaskToPlanner, syncTenderStageToPlanner } from "@/lib/tender-planner";
 import { getCurrentUserPermissions } from "@/lib/permissions";
 import Anthropic from "@anthropic-ai/sdk";
@@ -405,11 +405,28 @@ type ActionResult = { error?: string };
  * risks elsewhere in this app never substitutes for this: only a human
  * with Approve permission, clicking this action, can make the actual
  * transition — see docs/TENDER_PLANNER.md.
+ *
+ * "The stage cannot become active until an owner has been assigned"
+ * (docs/TENDER_ASSIGNMENT.md) — this is now enforced HERE: the caller
+ * must supply an assignee, due date, priority, and optional comments in
+ * formData, validated by validateStageAssignment() before the stage
+ * change (or its ownership record) is written at all. Rejecting an
+ * assignment-less move is not optional UI friction; it's the actual
+ * data-integrity guarantee — a stage transition and its ownership
+ * assignment are written together, or neither is written.
  */
-export async function moveTenderStage(tenderId: string, newStage: TenderWorkflowStage): Promise<ActionResult> {
+export async function moveTenderStage(tenderId: string, newStage: TenderWorkflowStage, formData: FormData): Promise<ActionResult> {
   try {
     const permissions = await getCurrentUserPermissions();
     if (!permissions.email) return { error: "You need to be signed in." };
+
+    const assignTo = String(formData.get("assignTo") ?? "").trim().toLowerCase();
+    const dueDate = String(formData.get("dueDate") ?? "").trim() || null;
+    const priority = (String(formData.get("priority") ?? "Medium")) as "High" | "Medium" | "Low";
+    const comments = String(formData.get("comments") ?? "").trim() || null;
+
+    const assignmentCheck = validateStageAssignment(assignTo);
+    if (!assignmentCheck.valid) return { error: assignmentCheck.error };
 
     const supabase = createServiceClient();
     const { data: tender } = await supabase.from("tenders").select("*").eq("id", tenderId).maybeSingle();
@@ -421,9 +438,14 @@ export async function moveTenderStage(tenderId: string, newStage: TenderWorkflow
     }
 
     const movingToSubmissionReady = newStage === "Submission Ready" && currentStage !== "Submission Ready";
+    let actorEmail = permissions.email;
+    let actorName = permissions.name;
+
     if (movingToSubmissionReady) {
       const approvePermissions = await requirePermissionAction("tenders", "Approve");
       if (!approvePermissions.email) return { error: "Session error." };
+      actorEmail = approvePermissions.email;
+      actorName = approvePermissions.name;
 
       const { data: checklistRows } = await supabase.from("tender_checklist_items").select("done").eq("tender_id", tenderId);
       const checklist: ChecklistItem[] = (checklistRows ?? []).map((c) => ({ done: !!c.done }));
@@ -440,14 +462,64 @@ export async function moveTenderStage(tenderId: string, newStage: TenderWorkflow
       await supabase.from("tenders").update({ stage: newStage }).eq("id", tenderId);
     }
 
-    await logAudit({
-      actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
-      targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
-      metadata: { field: "workflow_stage", before: currentStage, after: newStage },
+    // Mark whatever assignment existed for the OLD stage as Completed —
+    // it's done, the tender has moved on. Never overwritten/deleted.
+    if (currentStage !== newStage) {
+      await supabase.from("tender_stage_assignments")
+        .update({ status: "Completed", completed_at: new Date().toISOString() })
+        .eq("tender_id", tenderId).eq("stage", currentStage).eq("status", "Active");
+    }
+
+    // Look up the new owner's name for a friendlier assignment record —
+    // best-effort, falls back to just the email if no employee record matches.
+    const { data: ownerEmployee } = await supabase.from("employees").select("name").ilike("email", assignTo).maybeSingle();
+
+    // Create (or reactivate) the assignment for the NEW stage — this
+    // and the stage change above are treated as one logical unit; see
+    // this function's docblock.
+    const { data: newAssignment } = await supabase.from("tender_stage_assignments")
+      .upsert({
+        tender_id: tenderId, stage: newStage, owner_email: assignTo, owner_name: ownerEmployee?.name ?? null,
+        assigned_by: actorEmail, assigned_at: new Date().toISOString(), due_date: dueDate, status: "Active",
+        priority, comments, updated_at: new Date().toISOString(),
+      }, { onConflict: "tender_id,stage" })
+      .select("id").single();
+
+    await supabase.from("tender_stage_assignment_history").insert({
+      tender_id: tenderId, stage: newStage, event_type: "Assigned",
+      new_owner_email: assignTo, new_due_date: dueDate, comments,
+      actor_email: actorEmail, actor_name: actorName,
     });
 
+    await logAudit({
+      actorEmail, actorName, action: "document_status_changed",
+      targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
+      metadata: { field: "workflow_stage", before: currentStage, after: newStage, assignedTo: assignTo },
+    });
+
+    // Notify the new owner — an in-app task (surfaces in their My Tasks/
+    // My Workflow automatically) plus a lightweight notification row.
+    // Teams/Outlook notifications are explicitly a future integration
+    // per the brief — not implemented here. See docs/TENDER_ASSIGNMENT.md.
+    await createTaskForEmployee({
+      title: `${tender.ref}: ${newStage} — assigned to you`,
+      employeeEmail: assignTo, moduleKey: "tenders", recordId: tenderId, recordUrl: `/tenders/${tenderId}`,
+      dueDate: dueDate ?? undefined, priority, workflowStage: newStage, createdBy: actorEmail,
+    });
+    if (supabaseConfigured()) {
+      const supabase2 = createServiceClient();
+      await supabase2.from("notifications").insert({
+        text: `You've been assigned ${tender.ref} — ${newStage}${dueDate ? ` (due ${dueDate})` : ""}`,
+        type: "tender_assignment", employee_email: assignTo, module_key: "tenders",
+      });
+    }
+
     // Best-effort Planner sync — moves this tender's already-synced
-    // tasks to the matching bucket. Never blocks the stage change above.
+    // tasks to the matching bucket, and creates a new one for this
+    // assignment naming the owner in its title (Planner assignment to a
+    // specific Microsoft user isn't implemented — see
+    // docs/TENDER_ASSIGNMENT.md, "Known limitations"). Never blocks the
+    // stage change above.
     if (isPlannerConfigured) {
       const session = await auth();
       if (session?.accessToken) {
@@ -457,9 +529,119 @@ export async function moveTenderStage(tenderId: string, newStage: TenderWorkflow
 
     revalidatePath(`/tenders/${tenderId}`);
     revalidatePath("/tenders");
+    revalidatePath("/dashboard");
     return {};
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Couldn't move this tender's stage." };
+  }
+}
+
+function supabaseConfigured(): boolean {
+  return !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+/**
+ * Reassigns a stage's current owner to someone else, at any time — not
+ * just during a stage transition. Requires the same real permission as
+ * moving a stage (Edit), keeps the OLD assignment row updated in place
+ * (owner_email changes), and writes a permanent history row recording
+ * exactly who it moved from/to and why. See docs/TENDER_ASSIGNMENT.md.
+ */
+export async function reassignTenderStage(tenderId: string, stage: TenderWorkflowStage, formData: FormData): Promise<ActionResult> {
+  try {
+    const permissions = await requirePermissionAction("tenders", "Edit");
+    if (!permissions.email) return { error: "Session error." };
+
+    const newOwnerEmail = String(formData.get("newOwnerEmail") ?? "").trim().toLowerCase();
+    const reason = String(formData.get("reason") ?? "").trim() || null;
+    const assignmentCheck = validateStageAssignment(newOwnerEmail);
+    if (!assignmentCheck.valid) return { error: assignmentCheck.error };
+
+    const supabase = createServiceClient();
+    const { data: assignment } = await supabase.from("tender_stage_assignments").select("*").eq("tender_id", tenderId).eq("stage", stage).maybeSingle();
+    if (!assignment) return { error: "No assignment found for this stage yet — assign it first." };
+
+    const { data: tender } = await supabase.from("tenders").select("ref").eq("id", tenderId).maybeSingle();
+    const { data: newOwnerEmployee } = await supabase.from("employees").select("name").ilike("email", newOwnerEmail).maybeSingle();
+    const previousOwnerEmail = assignment.owner_email;
+
+    await supabase.from("tender_stage_assignments").update({
+      owner_email: newOwnerEmail, owner_name: newOwnerEmployee?.name ?? null,
+      assigned_by: permissions.email, assigned_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq("id", assignment.id);
+
+    await supabase.from("tender_stage_assignment_history").insert({
+      tender_id: tenderId, stage, event_type: "Reassigned",
+      previous_owner_email: previousOwnerEmail, new_owner_email: newOwnerEmail, reason,
+      actor_email: permissions.email, actor_name: permissions.name,
+    });
+
+    await logAudit({
+      actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
+      targetType: "tender", targetId: tenderId, targetLabel: tender?.ref ?? tenderId,
+      metadata: { field: "stage_reassignment", stage, before: previousOwnerEmail, after: newOwnerEmail, reason },
+    });
+
+    await createTaskForEmployee({
+      title: `${tender?.ref ?? "Tender"}: ${stage} — reassigned to you`,
+      employeeEmail: newOwnerEmail, moduleKey: "tenders", recordId: tenderId, recordUrl: `/tenders/${tenderId}`,
+      dueDate: assignment.due_date ?? undefined, priority: assignment.priority, workflowStage: stage, createdBy: permissions.email,
+    });
+
+    revalidatePath(`/tenders/${tenderId}`);
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't reassign this stage." };
+  }
+}
+
+/**
+ * HR/Super Admin/Manager manual "send overdue reminders now" action —
+ * see docs/TENDER_ASSIGNMENT.md, "Overdue management," for why this is
+ * manual rather than an automatic scheduled job in this pass (no cron
+ * infrastructure exists yet in this app). Notifies the assigned
+ * employee, their manager (if known), and Super Admins.
+ */
+export async function sendOverdueStageEscalation(assignmentId: string): Promise<ActionResult> {
+  try {
+    const permissions = await requirePermissionAction("tenders", "Edit");
+    if (!permissions.email) return { error: "Session error." };
+
+    const supabase = createServiceClient();
+    const { data: assignment } = await supabase.from("tender_stage_assignments").select("*, tenders(ref)").eq("id", assignmentId).maybeSingle();
+    if (!assignment) return { error: "Assignment not found." };
+    const tenderRef = Array.isArray(assignment.tenders) ? assignment.tenders[0]?.ref : assignment.tenders?.ref;
+
+    const recipients = new Set<string>([assignment.owner_email]);
+
+    const { data: owner } = await supabase.from("employees").select("manager_id").ilike("email", assignment.owner_email).maybeSingle();
+    if (owner?.manager_id) {
+      const { data: manager } = await supabase.from("employees").select("email").eq("id", owner.manager_id).maybeSingle();
+      if (manager?.email) recipients.add(manager.email.toLowerCase());
+    }
+
+    const { data: superAdmins } = await supabase.from("user_permissions").select("email").eq("is_admin", true);
+    for (const admin of superAdmins ?? []) {
+      if (admin.email) recipients.add(admin.email.toLowerCase());
+    }
+
+    for (const email of recipients) {
+      await createTaskForEmployee({
+        title: `Overdue: ${tenderRef ?? "Tender"} — ${assignment.stage} (owner: ${assignment.owner_email})`,
+        employeeEmail: email, moduleKey: "tenders", recordId: assignment.tender_id, recordUrl: `/tenders/${assignment.tender_id}`,
+        dueDate: assignment.due_date ?? undefined, priority: "High", workflowStage: assignment.stage, createdBy: permissions.email,
+      });
+    }
+
+    await logAudit({
+      actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
+      targetType: "tender", targetId: assignment.tender_id, targetLabel: tenderRef ?? assignment.tender_id,
+      metadata: { field: "overdue_escalation", stage: assignment.stage, notifiedCount: recipients.size },
+    });
+
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the escalation." };
   }
 }
 

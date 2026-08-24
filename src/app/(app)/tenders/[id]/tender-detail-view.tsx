@@ -15,10 +15,12 @@ import {
   updateSubmissionInfo, retryTenderFolderCreation, generateChecklistWithAI,
 } from "../tender-actions";
 import { TenderWorkflowControl } from "./TenderWorkflowControl";
+import { AssignmentHistoryCard } from "./AssignmentHistoryCard";
+import type { TenderStageAssignment, StageAssignmentHistoryEntry } from "@/lib/tender-assignments";
 
 type Tab = "overview" | "compliance" | "documents" | "submissions";
 
-export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfigured }: { tender: TenderDetail; canEdit: boolean; canApprove: boolean; sharePointConfigured: boolean }) {
+export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfigured, currentAssignment, history }: { tender: TenderDetail; canEdit: boolean; canApprove: boolean; sharePointConfigured: boolean; currentAssignment: TenderStageAssignment | null; history: StageAssignmentHistoryEntry[] }) {
   const [tab, setTab] = useState<Tab>("overview");
 
   const tabs: { key: Tab; label: string; icon: typeof ClipboardList }[] = [
@@ -63,7 +65,8 @@ export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfig
 
       {tab === "overview" && (
         <div className="space-y-4 max-w-xl">
-          <TenderWorkflowControl tenderId={String(tender.id)} currentStage={tender.stage ?? "Drafting"} canEdit={canEdit} canApprove={canApprove} />
+          <TenderWorkflowControl tenderId={String(tender.id)} currentStage={tender.stage ?? "Drafting"} canEdit={canEdit} canApprove={canApprove} currentAssignment={currentAssignment} />
+          <AssignmentHistoryCard history={history} />
           <OverviewTab tender={tender} />
         </div>
       )}

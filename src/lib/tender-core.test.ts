@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage } from "./tender-core";
+import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment } from "./tender-core";
 
 describe("calculateCompliancePct", () => {
   it("returns null, not 0, for a tender with no checklist yet", () => {
@@ -107,5 +107,39 @@ describe("normalizeTenderStage", () => {
     expect(normalizeTenderStage(null)).toBe("Drafting");
     expect(normalizeTenderStage(undefined)).toBe("Drafting");
     expect(normalizeTenderStage("")).toBe("Drafting");
+  });
+});
+
+describe("isStageOverdue", () => {
+  const TODAY = new Date("2026-08-20T09:00:00");
+
+  it("flags an Active assignment past its due date", () => {
+    expect(isStageOverdue({ status: "Active", dueDate: "2026-08-10" }, TODAY)).toBe(true);
+  });
+
+  it("does not flag an Active assignment not yet due", () => {
+    expect(isStageOverdue({ status: "Active", dueDate: "2026-09-01" }, TODAY)).toBe(false);
+  });
+
+  it("never flags a Completed assignment, no matter how late it finished", () => {
+    expect(isStageOverdue({ status: "Completed", dueDate: "2026-08-01" }, TODAY)).toBe(false);
+  });
+
+  it("never flags a Reassigned assignment", () => {
+    expect(isStageOverdue({ status: "Reassigned", dueDate: "2026-08-01" }, TODAY)).toBe(false);
+  });
+
+  it("does not flag an assignment with no due date at all", () => {
+    expect(isStageOverdue({ status: "Active", dueDate: null }, TODAY)).toBe(false);
+  });
+});
+
+describe("validateStageAssignment", () => {
+  it("requires a real, non-blank owner email", () => {
+    expect(validateStageAssignment("person@iqfuels.co.za").valid).toBe(true);
+    expect(validateStageAssignment(null).valid).toBe(false);
+    expect(validateStageAssignment(undefined).valid).toBe(false);
+    expect(validateStageAssignment("").valid).toBe(false);
+    expect(validateStageAssignment("   ").valid).toBe(false);
   });
 });

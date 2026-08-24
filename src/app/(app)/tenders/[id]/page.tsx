@@ -3,6 +3,8 @@ import { getTenderDetail } from "@/lib/data";
 import { requireModuleAccess, getCurrentUserPermissions } from "@/lib/permissions";
 import { checkPermissionAction } from "@/lib/rbac";
 import { isSharePointConfigured } from "@/lib/graph";
+import { getTenderStageAssignments, getTenderStageAssignmentHistory } from "@/lib/tender-assignments";
+import { normalizeTenderStage } from "@/lib/tender-core";
 import { TenderDetailView } from "./tender-detail-view";
 
 export default async function TenderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,5 +19,10 @@ export default async function TenderDetailPage({ params }: { params: Promise<{ i
 
   if (!tender) notFound();
 
-  return <TenderDetailView tender={tender} canEdit={canEdit} canApprove={canApprove} sharePointConfigured={isSharePointConfigured} />;
+  const assignments = await getTenderStageAssignments(tender.id);
+  const history = await getTenderStageAssignmentHistory(tender.id);
+  const currentStage = normalizeTenderStage(tender.stage);
+  const currentAssignment = assignments.find((a) => a.stage === currentStage && a.status === "Active") ?? null;
+
+  return <TenderDetailView tender={tender} canEdit={canEdit} canApprove={canApprove} sharePointConfigured={isSharePointConfigured} currentAssignment={currentAssignment} history={history} />;
 }
