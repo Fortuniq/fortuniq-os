@@ -6,7 +6,7 @@ import {
   ArrowLeft, ClipboardList, CheckSquare, FolderOpen, Send, Plus, Trash2,
   ExternalLink, FolderSync, FileText, Folder, X, Sparkles,
 } from "lucide-react";
-import { Card, CardBody } from "@/components/ui/Card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { formatDate, formatZARFull } from "@/lib/format";
 import type { TenderDetail } from "@/lib/data";
@@ -66,8 +66,9 @@ export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfig
       {tab === "overview" && (
         <div className="space-y-4 max-w-xl">
           <TenderWorkflowControl tenderId={String(tender.id)} currentStage={tender.stage ?? "Drafting"} canEdit={canEdit} canApprove={canApprove} currentAssignment={currentAssignment} />
+          <WorkflowSummaryCard tender={tender} currentAssignment={currentAssignment} />
           <AssignmentHistoryCard history={history} />
-          <OverviewTab tender={tender} />
+          <OverviewTab tender={tender} currentAssignment={currentAssignment} />
         </div>
       )}
       {tab === "compliance" && <ComplianceTab tender={tender} canEdit={canEdit} />}
@@ -86,16 +87,44 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function OverviewTab({ tender }: { tender: TenderDetail }) {
+function OverviewTab({ tender, currentAssignment }: { tender: TenderDetail; currentAssignment: TenderStageAssignment | null }) {
   return (
     <Card className="max-w-xl">
       <CardBody>
         <InfoRow label="Reference" value={tender.ref} />
         <InfoRow label="Closing Date" value={formatDate(tender.closing)} />
         <InfoRow label="Status" value={tender.status} />
-        <InfoRow label="Stage" value={tender.stage} />
         <InfoRow label="Value" value={formatZARFull(tender.value)} />
         <InfoRow label="Compliance" value={`${tender.compliance}%`} />
+      </CardBody>
+    </Card>
+  );
+}
+
+/**
+ * "A manager looking at the Tender Register should immediately
+ * understand: Who created the tender? Who currently owns it? When was
+ * it created? Where is it in the workflow? When was it last worked on?"
+ * — this card is that same information, at a glance, on the tender's
+ * own page. See docs/TENDER_REGISTER.md, "Workflow Summary."
+ */
+function WorkflowSummaryCard({ tender, currentAssignment }: { tender: TenderDetail; currentAssignment: TenderStageAssignment | null }) {
+  return (
+    <Card className="max-w-xl">
+      <CardHeader><CardTitle>Workflow Summary</CardTitle></CardHeader>
+      <CardBody>
+        <InfoRow label="Created On" value={tender.createdAt ? formatDate(tender.createdAt) : "—"} />
+        <InfoRow label="Created By" value={tender.createdByName ?? "—"} />
+        <InfoRow label="Current Stage" value={tender.stage} />
+        <InfoRow label="Assigned To" value={currentAssignment?.ownerName ?? tender.assignedToName ?? "Not Assigned"} />
+        <InfoRow label="Assigned On" value={currentAssignment?.assignedAt ? formatDate(currentAssignment.assignedAt) : "—"} />
+        <InfoRow label="Due Date" value={currentAssignment?.dueDate ? formatDate(currentAssignment.dueDate) : "—"} />
+        <InfoRow label="Priority" value={currentAssignment?.priority ?? "—"} />
+        <InfoRow label="Status" value={currentAssignment?.status ?? "—"} />
+        <InfoRow
+          label="Last Activity"
+          value={tender.lastActivityAt ? `${formatDate(tender.lastActivityAt)}${tender.lastActivityDescription ? ` — ${tender.lastActivityDescription}` : ""}` : "—"}
+        />
       </CardBody>
     </Card>
   );

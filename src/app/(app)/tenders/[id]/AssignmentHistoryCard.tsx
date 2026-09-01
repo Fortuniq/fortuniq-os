@@ -29,11 +29,13 @@ export function AssignmentHistoryCard({ history }: { history: StageAssignmentHis
               <span className="font-medium">{EVENT_LABEL[h.eventType] ?? h.eventType}</span> — {h.stage}
             </p>
             {h.eventType === "Reassigned" && (
-              <p className="text-xs text-grey">{h.previousOwnerEmail} → {h.newOwnerEmail}{h.reason ? ` — "${h.reason}"` : ""}</p>
+              <p className="text-xs text-grey">
+                {h.previousOwnerName ?? h.previousOwnerEmail} → {h.newOwnerName ?? h.newOwnerEmail}{h.reason ? ` — "${h.reason}"` : ""}
+              </p>
             )}
             {h.eventType === "Assigned" && (
               <p className="text-xs text-grey">
-                Assigned to {h.newOwnerEmail}{h.newDueDate ? `, due ${formatDate(h.newDueDate)}` : ""}
+                Assigned to {h.newOwnerName ?? h.newOwnerEmail}{h.newDueDate ? `, due ${formatDate(h.newDueDate)}` : ""}
               </p>
             )}
             {h.comments && <p className="text-xs text-light-grey italic">&ldquo;{h.comments}&rdquo;</p>}

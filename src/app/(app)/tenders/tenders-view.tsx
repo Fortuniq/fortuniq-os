@@ -7,8 +7,10 @@ import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, type Column } from "@/components/ui/DataTable";
+import { StickyScrollDataTable } from "@/components/ui/StickyScrollDataTable";
+import { type Column } from "@/components/ui/DataTable";
 import { formatDate, formatZARCompact } from "@/lib/format";
+import { formatRelativeActivityTime, isTenderStale } from "@/lib/tender-core";
 import { TenderFormModal } from "./TenderFormModal";
 import { deleteTender } from "./tender-actions";
 import { TeamAssignmentsWidget } from "./TeamAssignmentsWidget";
@@ -23,6 +25,14 @@ type Tender = {
   value: number;
   compliance: number;
   complianceIsCalculated?: boolean;
+  createdByName: string | null;
+  createdByEmail: string | null;
+  createdAt: string | null;
+  assignedToName: string | null;
+  assignedToEmail: string | null;
+  currentPriority: string | null;
+  lastActivityAt: string | null;
+  lastActivityDescription: string | null;
 };
 
 type ChecklistItem = { item: string; done: boolean };
@@ -39,6 +49,44 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTender, setEditingTender] = useState<Tender | null>(null);
   const [stageFilter, setStageFilter] = useState<string | null>(null);
+
+  // ---------- Filtering & Sorting — see docs/TENDER_REGISTER.md ----------
+  const [createdByFilter, setCreatedByFilter] = useState("");
+  const [assignedToFilter, setAssignedToFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [sortKey, setSortKey] = useState<"closing" | "createdAt" | "lastActivityAt" | "value" | "createdByName" | "assignedToName" | "status" | "stage">("closing");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const createdByOptions = Array.from(new Set(tenders.map((t) => t.createdByName).filter((n): n is string => !!n))).sort();
+  const assignedToOptions = Array.from(new Set(tenders.map((t) => t.assignedToName).filter((n): n is string => !!n))).sort();
+
+  function toggleSort(key: typeof sortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+
+  let visibleTenders = tenders;
+  if (stageFilter) visibleTenders = visibleTenders.filter((t) => t.stage === stageFilter);
+  if (createdByFilter) visibleTenders = visibleTenders.filter((t) => t.createdByName === createdByFilter);
+  if (assignedToFilter) visibleTenders = visibleTenders.filter((t) => t.assignedToName === assignedToFilter);
+  if (statusFilter) visibleTenders = visibleTenders.filter((t) => t.status === statusFilter);
+  if (priorityFilter) visibleTenders = visibleTenders.filter((t) => t.currentPriority === priorityFilter);
+
+  visibleTenders = [...visibleTenders].sort((a, b) => {
+    let cmp = 0;
+    switch (sortKey) {
+      case "closing": cmp = a.closing.localeCompare(b.closing); break;
+      case "createdAt": cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? ""); break;
+      case "lastActivityAt": cmp = (a.lastActivityAt ?? "").localeCompare(b.lastActivityAt ?? ""); break;
+      case "value": cmp = a.value - b.value; break;
+      case "createdByName": cmp = (a.createdByName ?? "").localeCompare(b.createdByName ?? ""); break;
+      case "assignedToName": cmp = (a.assignedToName ?? "").localeCompare(b.assignedToName ?? ""); break;
+      case "status": cmp = a.status.localeCompare(b.status); break;
+      case "stage": cmp = (a.stage ?? "").localeCompare(b.stage ?? ""); break;
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   const open = tenders.filter((t) => t.status === "Open");
   const won = tenders.filter((t) => t.stage === "Closed — Won").length;
@@ -74,6 +122,29 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
           <span className="text-xs text-grey w-8">{r.compliance}%</span>
         </div>
       ),
+    },
+    {
+      key: "createdBy", header: "Created By",
+      render: (r) => <span className="text-sm text-navy" title={r.createdByEmail ?? undefined}>{r.createdByName ?? "—"}</span>,
+    },
+    {
+      key: "assignedTo", header: "Assigned To",
+      render: (r) => <span className="text-sm text-navy" title={r.assignedToEmail ?? undefined}>{r.assignedToName ?? "Not Assigned"}</span>,
+    },
+    { key: "createdOn", header: "Created On", render: (r) => <span className="text-sm text-grey whitespace-nowrap">{r.createdAt ? formatDate(r.createdAt) : "—"}</span> },
+    {
+      key: "lastActivity", header: "Last Activity",
+      render: (r) => {
+        const stale = isTenderStale(r.lastActivityAt, r.status);
+        return (
+          <div>
+            <p className={`text-sm ${stale ? "text-amber-700 font-semibold" : "text-navy"}`}>
+              {formatRelativeActivityTime(r.lastActivityAt)}{stale ? " ⚠" : ""}
+            </p>
+            {r.lastActivityDescription && <p className="text-xs text-light-grey">{r.lastActivityDescription}</p>}
+          </div>
+        );
+      },
     },
     {
       key: "workspace", header: "", align: "right" as const,
@@ -156,10 +227,54 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Tender Register{stageFilter ? ` — ${stageFilter}` : ""}</CardTitle>
-            {stageFilter && <button onClick={() => setStageFilter(null)} className="text-xs text-orange hover:underline">Clear filter</button>}
+            {stageFilter && <button onClick={() => setStageFilter(null)} className="text-xs text-orange hover:underline">Clear stage filter</button>}
           </CardHeader>
           <CardBody className="pt-2">
-            <DataTable columns={columns} data={stageFilter ? tenders.filter((t) => t.stage === stageFilter) : tenders} />
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} className="text-xs border border-border rounded-lg px-2 py-1.5">
+                <option value="">All creators</option>
+                {createdByOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <select value={assignedToFilter} onChange={(e) => setAssignedToFilter(e.target.value)} className="text-xs border border-border rounded-lg px-2 py-1.5">
+                <option value="">All owners</option>
+                {assignedToOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-xs border border-border rounded-lg px-2 py-1.5">
+                <option value="">All statuses</option>
+                <option value="Open">Open</option>
+                <option value="Awarded">Awarded</option>
+                <option value="Lost">Lost</option>
+              </select>
+              <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="text-xs border border-border rounded-lg px-2 py-1.5">
+                <option value="">All priorities</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+              <span className="text-xs text-light-grey ml-1">Sort:</span>
+              <select value={sortKey} onChange={(e) => setSortKey(e.target.value as typeof sortKey)} className="text-xs border border-border rounded-lg px-2 py-1.5">
+                <option value="closing">Closing Date</option>
+                <option value="createdAt">Created On</option>
+                <option value="lastActivityAt">Last Activity</option>
+                <option value="value">Tender Value</option>
+                <option value="createdByName">Created By</option>
+                <option value="assignedToName">Assigned To</option>
+                <option value="status">Status</option>
+                <option value="stage">Stage</option>
+              </select>
+              <button onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))} className="text-xs border border-border rounded-lg px-2 py-1.5 text-grey hover:text-orange hover:border-orange transition-colors">
+                {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
+              </button>
+              {(createdByFilter || assignedToFilter || statusFilter || priorityFilter) && (
+                <button
+                  onClick={() => { setCreatedByFilter(""); setAssignedToFilter(""); setStatusFilter(""); setPriorityFilter(""); }}
+                  className="text-xs text-orange hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <StickyScrollDataTable columns={columns} data={visibleTenders} />
           </CardBody>
         </Card>
 

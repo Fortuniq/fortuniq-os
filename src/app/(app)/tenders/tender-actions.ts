@@ -11,6 +11,7 @@ import { createTaskForEmployee, createTaskForEmployeeWithId } from "@/lib/tasks"
 import { createCalendarEventForEmployee } from "@/lib/calendar";
 import { canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, validateStageAssignment, type ChecklistItem } from "@/lib/tender-core";
 import { syncNewTenderTaskToPlanner, syncTenderStageToPlanner } from "@/lib/tender-planner";
+import { recordTenderActivity } from "@/lib/tender-activity";
 import { getCurrentUserPermissions } from "@/lib/permissions";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -90,6 +91,10 @@ export async function addTender(formData: FormData) {
     compliance: Number(formData.get("compliance") ?? 0),
     sharepoint_folder_id: sharepointFolderId,
     sharepoint_folder_url: sharepointFolderUrl,
+    created_by_name: permissions.name ?? null,
+    created_by_email: permissions.email ?? null,
+    last_activity_at: new Date().toISOString(),
+    last_activity_description: "Tender created",
   }).select("id").single();
 
   if (error) throw new Error(error.message);
@@ -139,19 +144,41 @@ export async function updateTender(tenderId: string, formData: FormData) {
   const permissions = await requirePermissionAction("tenders", "Edit");
   const supabase = createServiceClient();
 
+  const { data: before } = await supabase.from("tenders").select("value, closing_date, status").eq("id", tenderId).maybeSingle();
+
+  const newValue = parseTenderValue(formData);
+  const newClosingDate = String(formData.get("closingDate") ?? "");
+  const newStatus = String(formData.get("status") ?? "Open");
+
   const { error } = await supabase.from("tenders").update({
     ref: String(formData.get("ref") ?? "").trim(),
     title: String(formData.get("title") ?? "").trim(),
-    closing_date: String(formData.get("closingDate") ?? ""),
-    status: String(formData.get("status") ?? "Open"),
+    closing_date: newClosingDate,
+    status: newStatus,
     stage: String(formData.get("stage") ?? "").trim() || null,
-    value: parseTenderValue(formData),
+    value: newValue,
     compliance: Number(formData.get("compliance") ?? 0),
   }).eq("id", tenderId);
 
   if (error) throw new Error(error.message);
 
   await logAudit({ actorEmail: permissions.email!, actorName: permissions.name, action: "document_status_changed", targetType: "tender", targetId: tenderId, metadata: { field: "tender_updated" } });
+
+  // The most specific true thing that changed, for the Last Activity
+  // column — status (Awarded/Lost) takes priority since it's the most
+  // significant, followed by value, then due date, per the brief's own
+  // examples — falling back to a generic message when none of those
+  // specific fields moved.
+  if (before && before.status !== newStatus && (newStatus === "Awarded" || newStatus === "Lost")) {
+    await recordTenderActivity(tenderId, newStatus === "Awarded" ? "Tender awarded" : "Tender lost");
+  } else if (before && Number(before.value) !== newValue) {
+    await recordTenderActivity(tenderId, "Tender value changed");
+  } else if (before && before.closing_date !== newClosingDate) {
+    await recordTenderActivity(tenderId, "Due date changed");
+  } else {
+    await recordTenderActivity(tenderId, "Tender details updated");
+  }
+
   revalidatePath("/tenders");
 }
 
@@ -173,6 +200,7 @@ export async function toggleChecklistItem(itemId: string, tenderId: string, done
     actorEmail: permissions.email!, actorName: permissions.name, action: "document_status_changed",
     targetType: "tender_checklist_item", targetId: itemId, metadata: { tenderId, done },
   });
+  await recordTenderActivity(tenderId, "Checklist updated");
   revalidatePath(`/tenders/${tenderId}`);
 }
 
@@ -186,6 +214,7 @@ export async function addChecklistItem(tenderId: string, itemText: string) {
     actorEmail: permissions.email!, actorName: permissions.name, action: "document_status_changed",
     targetType: "tender_checklist_item", targetId: tenderId, metadata: { field: "checklist_item_added", item: trimmed },
   });
+  await recordTenderActivity(tenderId, "Checklist updated");
   revalidatePath(`/tenders/${tenderId}`);
 }
 
@@ -197,6 +226,7 @@ export async function deleteChecklistItem(itemId: string, tenderId: string) {
     actorEmail: permissions.email!, actorName: permissions.name, action: "document_status_changed",
     targetType: "tender_checklist_item", targetId: itemId, metadata: { tenderId, field: "checklist_item_deleted" },
   });
+  await recordTenderActivity(tenderId, "Checklist updated");
   revalidatePath(`/tenders/${tenderId}`);
 }
 
@@ -219,6 +249,7 @@ export async function updateSubmissionInfo(tenderId: string, formData: FormData)
     actorEmail: permissions.email!, actorName: permissions.name, action: "document_status_changed",
     targetType: "tender", targetId: tenderId, metadata: { field: "submission_info_updated", method, datetime },
   });
+  await recordTenderActivity(tenderId, "Submission status changed");
   revalidatePath(`/tenders/${tenderId}`);
 }
 
@@ -385,6 +416,7 @@ Example: ["B-BBEE Certificate (valid)", "Tax Compliance Certificate", "SBD 4 - D
     actorEmail: permissions.email!, actorName: permissions.name, action: "document_catalogued",
     targetType: "tender", targetId: tenderId, metadata: { field: "ai_checklist_generated", itemsAdded: newItems.length },
   });
+  await recordTenderActivity(tenderId, "AI Review completed");
 
   revalidatePath(`/tenders/${tenderId}`);
   return { itemsAdded: newItems.length };
@@ -487,15 +519,27 @@ export async function moveTenderStage(tenderId: string, newStage: TenderWorkflow
 
     await supabase.from("tender_stage_assignment_history").insert({
       tender_id: tenderId, stage: newStage, event_type: "Assigned",
-      new_owner_email: assignTo, new_due_date: dueDate, comments,
+      new_owner_email: assignTo, new_owner_name: ownerEmployee?.name ?? null, new_due_date: dueDate, comments,
       actor_email: actorEmail, actor_name: actorName,
     });
+
+    // Keep the Tender Register's denormalised "Assigned To" column in
+    // sync with the real source of truth (tender_stage_assignments)
+    // every time it changes — see docs/TENDER_REGISTER.md, "Why
+    // Assigned To is denormalised."
+    await supabase.from("tenders").update({
+      assigned_to_name: ownerEmployee?.name ?? null, assigned_to_email: assignTo, current_priority: priority,
+    }).eq("id", tenderId);
 
     await logAudit({
       actorEmail, actorName, action: "document_status_changed",
       targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
       metadata: { field: "workflow_stage", before: currentStage, after: newStage, assignedTo: assignTo },
     });
+    await recordTenderActivity(
+      tenderId,
+      currentStage === newStage ? `Assigned to ${ownerEmployee?.name ?? assignTo}` : `Stage changed to ${newStage}`
+    );
 
     // Notify the new owner — an in-app task (surfaces in their My Tasks/
     // My Workflow automatically) plus a lightweight notification row.
@@ -561,7 +605,7 @@ export async function reassignTenderStage(tenderId: string, stage: TenderWorkflo
     const { data: assignment } = await supabase.from("tender_stage_assignments").select("*").eq("tender_id", tenderId).eq("stage", stage).maybeSingle();
     if (!assignment) return { error: "No assignment found for this stage yet — assign it first." };
 
-    const { data: tender } = await supabase.from("tenders").select("ref").eq("id", tenderId).maybeSingle();
+    const { data: tender } = await supabase.from("tenders").select("ref, stage").eq("id", tenderId).maybeSingle();
     const { data: newOwnerEmployee } = await supabase.from("employees").select("name").ilike("email", newOwnerEmail).maybeSingle();
     const previousOwnerEmail = assignment.owner_email;
 
@@ -572,15 +616,27 @@ export async function reassignTenderStage(tenderId: string, stage: TenderWorkflo
 
     await supabase.from("tender_stage_assignment_history").insert({
       tender_id: tenderId, stage, event_type: "Reassigned",
-      previous_owner_email: previousOwnerEmail, new_owner_email: newOwnerEmail, reason,
+      previous_owner_email: previousOwnerEmail, previous_owner_name: assignment.owner_name ?? null,
+      new_owner_email: newOwnerEmail, new_owner_name: newOwnerEmployee?.name ?? null, reason,
       actor_email: permissions.email, actor_name: permissions.name,
     });
+
+    // Only update the Register's denormalised "Assigned To" if this
+    // reassignment is for the tender's CURRENT stage — reassigning an
+    // earlier, already-completed stage's historical owner shouldn't
+    // change what the Register shows as the tender's present owner.
+    if (tender?.stage === stage) {
+      await supabase.from("tenders").update({
+        assigned_to_name: newOwnerEmployee?.name ?? null, assigned_to_email: newOwnerEmail,
+      }).eq("id", tenderId);
+    }
 
     await logAudit({
       actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
       targetType: "tender", targetId: tenderId, targetLabel: tender?.ref ?? tenderId,
       metadata: { field: "stage_reassignment", stage, before: previousOwnerEmail, after: newOwnerEmail, reason },
     });
+    await recordTenderActivity(tenderId, `Reassigned to ${newOwnerEmployee?.name ?? newOwnerEmail}`);
 
     await createTaskForEmployee({
       title: `${tender?.ref ?? "Tender"}: ${stage} — reassigned to you`,
@@ -707,6 +763,7 @@ export async function recordTenderSubmission(tenderId: string, formData: FormDat
       targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
       metadata: { field: "submission", submissionMethod, submissionReference },
     });
+    await recordTenderActivity(tenderId, "Tender submitted");
 
     if (isPlannerConfigured) {
       const session = await auth();

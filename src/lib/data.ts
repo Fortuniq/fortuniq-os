@@ -411,14 +411,20 @@ export async function getTenderWorkflowCounts() {
 }
 
 export async function getTenders() {
-  if (!supabaseConfigured) return mock.tenders;
+  const mockFallback = () => mock.tenders.map((t) => ({
+    ...t,
+    createdByName: null as string | null, createdByEmail: null as string | null, createdAt: null as string | null,
+    assignedToName: null as string | null, assignedToEmail: null as string | null, currentPriority: null as string | null,
+    lastActivityAt: null as string | null, lastActivityDescription: null as string | null,
+  }));
+  if (!supabaseConfigured) return mockFallback();
   try {
     const supabase = createServiceClient();
     const [{ data, error }, { data: checklistRows }] = await Promise.all([
       supabase.from("tenders").select("*").order("closing_date"),
       supabase.from("tender_checklist_items").select("tender_id, done"),
     ]);
-    if (error || !data || data.length === 0) return mock.tenders;
+    if (error || !data || data.length === 0) return mockFallback();
 
     // Grouped once, here, rather than one query per tender — real
     // compliance is calculated per tender from ITS OWN checklist items
@@ -439,6 +445,14 @@ export async function getTenders() {
         id: t.id, ref: t.ref, title: t.title, closing: t.closing_date, status: t.status, stage: t.stage,
         value: Number(t.value), compliance: pct ?? Number(t.compliance ?? 0), complianceIsCalculated: pct !== null,
         sharepointFolderId: t.sharepoint_folder_id,
+        createdByName: (t.created_by_name as string) ?? null,
+        createdByEmail: (t.created_by_email as string) ?? null,
+        createdAt: (t.created_at as string) ?? null,
+        assignedToName: (t.assigned_to_name as string) ?? null,
+        assignedToEmail: (t.assigned_to_email as string) ?? null,
+        currentPriority: (t.current_priority as string) ?? null,
+        lastActivityAt: (t.last_activity_at as string) ?? null,
+        lastActivityDescription: (t.last_activity_description as string) ?? null,
       };
     });
   } catch {
@@ -463,6 +477,11 @@ export type TenderDetail = {
   submissionMethod: string | null;
   submissionDatetime: string | null;
   checklist: TenderChecklistItem[];
+  createdByName: string | null;
+  createdAt: string | null;
+  assignedToName: string | null;
+  lastActivityAt: string | null;
+  lastActivityDescription: string | null;
 };
 
 /**
@@ -481,6 +500,7 @@ export async function getTenderDetail(tenderId: string): Promise<TenderDetail | 
       complianceIsCalculated: pct !== null,
       sharepointFolderId: null, sharepointFolderUrl: null, submissionMethod: null, submissionDatetime: null,
       checklist: mockChecklist,
+      createdByName: null, createdAt: null, assignedToName: null, lastActivityAt: null, lastActivityDescription: null,
     };
   }
   try {
@@ -497,6 +517,11 @@ export async function getTenderDetail(tenderId: string): Promise<TenderDetail | 
       sharepointFolderId: t.sharepoint_folder_id, sharepointFolderUrl: t.sharepoint_folder_url,
       submissionMethod: t.submission_method, submissionDatetime: t.submission_datetime,
       checklist: (checklist ?? []).map((c) => ({ id: c.id, item: c.item, done: c.done, source: c.source ?? "manual" })),
+      createdByName: (t.created_by_name as string) ?? null,
+      createdAt: (t.created_at as string) ?? null,
+      assignedToName: (t.assigned_to_name as string) ?? null,
+      lastActivityAt: (t.last_activity_at as string) ?? null,
+      lastActivityDescription: (t.last_activity_description as string) ?? null,
     };
   } catch {
     return null;

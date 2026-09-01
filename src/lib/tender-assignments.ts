@@ -106,7 +106,9 @@ export type StageAssignmentHistoryEntry = {
   stage: TenderWorkflowStage;
   eventType: "Assigned" | "Reassigned" | "Completed" | "Due Date Changed";
   previousOwnerEmail: string | null;
+  previousOwnerName: string | null;
   newOwnerEmail: string | null;
+  newOwnerName: string | null;
   previousDueDate: string | null;
   newDueDate: string | null;
   reason: string | null;
@@ -131,7 +133,9 @@ export async function getTenderStageAssignmentHistory(tenderId: string): Promise
       stage: row.stage as TenderWorkflowStage,
       eventType: row.event_type as StageAssignmentHistoryEntry["eventType"],
       previousOwnerEmail: (row.previous_owner_email as string) ?? null,
+      previousOwnerName: (row.previous_owner_name as string) ?? null,
       newOwnerEmail: (row.new_owner_email as string) ?? null,
+      newOwnerName: (row.new_owner_name as string) ?? null,
       previousDueDate: (row.previous_due_date as string) ?? null,
       newDueDate: (row.new_due_date as string) ?? null,
       reason: (row.reason as string) ?? null,

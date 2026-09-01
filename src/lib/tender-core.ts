@@ -163,3 +163,61 @@ export function validateStageAssignment(ownerEmail: string | null | undefined): 
   }
   return { valid: true };
 }
+
+// =========================================================================
+// TENDER REGISTER: LAST ACTIVITY & STALE DETECTION — see docs/TENDER_REGISTER.md
+// =========================================================================
+
+/**
+ * Default "no activity for this many days" threshold before a tender
+ * is flagged stale. The brief calls this "configurable" — this constant
+ * is the one place that configuration would live once a real settings
+ * UI exists; for now it's a single, documented default rather than a
+ * fabricated settings screen. See docs/TENDER_REGISTER.md, "Known
+ * limitations."
+ */
+export const STALE_TENDER_THRESHOLD_DAYS = 5;
+
+/**
+ * Renders a timestamp as a short relative-time string — "10 min ago",
+ * "2 hours ago", "Yesterday", "3 days ago" — matching the brief's own
+ * examples exactly. Falls back to a plain date once it's more than a
+ * week old, since "47 days ago" is less useful than an actual date at
+ * that distance.
+ */
+export function formatRelativeActivityTime(timestamp: string | null, today: Date = new Date()): string {
+  if (!timestamp) return "No activity yet";
+  const then = new Date(timestamp);
+  const diffMs = today.getTime() - then.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMinutes < 1) return "Just now";
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return then.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/**
+ * A tender is "stale" only if it's still Open (an Awarded or Lost
+ * tender is done — the brief explicitly says never mark
+ * closed/awarded/lost/archived tenders as stale) AND its last activity
+ * is older than the threshold. A tender with NO activity timestamp at
+ * all (shouldn't normally happen once activity logging is wired up,
+ * but defensively) is treated as stale if it's Open — silence on an
+ * open tender is exactly the situation this indicator exists to catch.
+ */
+export function isTenderStale(
+  lastActivityAt: string | null,
+  status: string,
+  today: Date = new Date(),
+  thresholdDays: number = STALE_TENDER_THRESHOLD_DAYS
+): boolean {
+  if (status !== "Open") return false;
+  if (!lastActivityAt) return true;
+  const diffDays = (today.getTime() - new Date(lastActivityAt).getTime()) / 86400000;
+  return diffDays >= thresholdDays;
+}

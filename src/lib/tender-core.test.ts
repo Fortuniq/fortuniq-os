@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment } from "./tender-core";
+import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment, formatRelativeActivityTime, isTenderStale } from "./tender-core";
 
 describe("calculateCompliancePct", () => {
   it("returns null, not 0, for a tender with no checklist yet", () => {
@@ -141,5 +141,49 @@ describe("validateStageAssignment", () => {
     expect(validateStageAssignment(undefined).valid).toBe(false);
     expect(validateStageAssignment("").valid).toBe(false);
     expect(validateStageAssignment("   ").valid).toBe(false);
+  });
+});
+
+describe("formatRelativeActivityTime", () => {
+  const NOW = new Date("2026-08-20T12:00:00Z");
+
+  it("formats minutes, hours, yesterday, and days correctly, matching the brief's examples", () => {
+    expect(formatRelativeActivityTime(new Date("2026-08-20T11:50:00Z").toISOString(), NOW)).toBe("10 min ago");
+    expect(formatRelativeActivityTime(new Date("2026-08-20T10:00:00Z").toISOString(), NOW)).toBe("2 hours ago");
+    expect(formatRelativeActivityTime(new Date("2026-08-19T12:00:00Z").toISOString(), NOW)).toBe("Yesterday");
+    expect(formatRelativeActivityTime(new Date("2026-08-17T12:00:00Z").toISOString(), NOW)).toBe("3 days ago");
+  });
+
+  it("falls back to a plain date once older than a week", () => {
+    const result = formatRelativeActivityTime(new Date("2026-07-01T12:00:00Z").toISOString(), NOW);
+    expect(result).not.toContain("ago");
+  });
+
+  it("handles no activity at all", () => {
+    expect(formatRelativeActivityTime(null, NOW)).toBe("No activity yet");
+  });
+});
+
+describe("isTenderStale", () => {
+  const NOW = new Date("2026-08-20T12:00:00Z");
+
+  it("flags an Open tender with no recent activity", () => {
+    expect(isTenderStale(new Date("2026-08-10T12:00:00Z").toISOString(), "Open", NOW)).toBe(true);
+  });
+
+  it("does not flag an Open tender with recent activity", () => {
+    expect(isTenderStale(new Date("2026-08-19T12:00:00Z").toISOString(), "Open", NOW)).toBe(false);
+  });
+
+  it("never flags an Awarded tender, no matter how old its last activity", () => {
+    expect(isTenderStale(new Date("2026-01-01T12:00:00Z").toISOString(), "Awarded", NOW)).toBe(false);
+  });
+
+  it("never flags a Lost tender", () => {
+    expect(isTenderStale(new Date("2026-01-01T12:00:00Z").toISOString(), "Lost", NOW)).toBe(false);
+  });
+
+  it("treats an Open tender with no activity timestamp at all as stale", () => {
+    expect(isTenderStale(null, "Open", NOW)).toBe(true);
   });
 });
