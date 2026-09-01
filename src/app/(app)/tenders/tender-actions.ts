@@ -12,6 +12,7 @@ import { createCalendarEventForEmployee } from "@/lib/calendar";
 import { canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, validateStageAssignment, type ChecklistItem } from "@/lib/tender-core";
 import { syncNewTenderTaskToPlanner, syncTenderStageToPlanner } from "@/lib/tender-planner";
 import { recordTenderActivity } from "@/lib/tender-activity";
+import { setClosingSoonWarningDays } from "@/lib/tender-deadlines";
 import { getCurrentUserPermissions } from "@/lib/permissions";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -831,5 +832,61 @@ export async function addTenderTask(tenderId: string, formData: FormData): Promi
     return {};
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Couldn't add this task." };
+  }
+}
+
+/**
+ * "Allow the warning period to be configurable in Settings" — Super
+ * Admin only, matching how other app-wide settings are gated in this
+ * app. See docs/TENDER_DEADLINES.md.
+ */
+export async function updateClosingSoonWarningDaysAction(days: number): Promise<{ error?: string }> {
+  const permissions = await getCurrentUserPermissions();
+  if (!permissions.isAdmin) return { error: "Only a Super Admin can change this setting." };
+  const result = await setClosingSoonWarningDays(days);
+  if (!result.error) revalidatePath("/tenders");
+  return result;
+}
+
+/**
+ * "The tender becomes read-only unless reopened by an authorised user"
+ * — this is that reopen action. Requires Approve permission (a higher
+ * bar than ordinary Edit, matching the significance of overriding an
+ * automatic classification), resets status back to Open, clears
+ * missed_at, and records both an audit entry and a workflow history
+ * entry — the same two-record pattern used for the automatic Missed
+ * transition itself. See docs/TENDER_DEADLINES.md.
+ */
+export async function reopenMissedTender(tenderId: string): Promise<ActionResult> {
+  try {
+    const permissions = await requirePermissionAction("tenders", "Approve");
+    if (!permissions.email) return { error: "Session error." };
+
+    const supabase = createServiceClient();
+    const { data: tender } = await supabase.from("tenders").select("ref, status").eq("id", tenderId).maybeSingle();
+    if (!tender) return { error: "Tender not found." };
+    if (tender.status !== "Missed") return { error: "This tender isn't currently marked Missed." };
+
+    await supabase.from("tenders").update({ status: "Open", stage: "Drafting", missed_at: null }).eq("id", tenderId);
+
+    await logAudit({
+      actorEmail: permissions.email, actorName: permissions.name, action: "document_status_changed",
+      targetType: "tender", targetId: tenderId, targetLabel: tender.ref,
+      metadata: { field: "status", before: "Missed", after: "Open", reason: "Manually reopened" },
+    });
+
+    await supabase.from("tender_stage_assignment_history").insert({
+      tender_id: tenderId, stage: "Drafting", event_type: "Reopened",
+      comments: "Tender reopened after being automatically marked Missed.",
+      actor_email: permissions.email, actor_name: permissions.name,
+    });
+
+    await recordTenderActivity(tenderId, "Tender reopened");
+
+    revalidatePath(`/tenders/${tenderId}`);
+    revalidatePath("/tenders");
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't reopen this tender." };
   }
 }

@@ -3,19 +3,31 @@ import { requireModuleAccess, getCurrentUserPermissions } from "@/lib/permission
 import { checkPermissionAction } from "@/lib/rbac";
 import { getAllActiveTenderAssignments } from "@/lib/tender-assignments";
 import { canManagerAccessTeamMember } from "@/lib/hcm-core";
+import { applyMissedStatusToAllOpenTenders, getClosingSoonWarningDays } from "@/lib/tender-deadlines";
 import { TendersView } from "./tenders-view";
 
 export default async function TendersPage() {
   await requireModuleAccess("tenders");
   const permissions = await getCurrentUserPermissions();
-  const [tenders, checklist, canCreate, workflowCounts, viewerEmployee, allAssignments] = await Promise.all([
+  const [tenders, checklist, canCreate, workflowCounts, viewerEmployee, allAssignments, closingSoonWarningDays] = await Promise.all([
     getTenders(),
     getTenderChecklist(),
     checkPermissionAction(permissions, "tenders", "Create"),
     getTenderWorkflowCounts(),
     permissions.email ? getEmployeeByEmail(permissions.email) : Promise.resolve(null),
     getAllActiveTenderAssignments(),
+    getClosingSoonWarningDays(),
   ]);
+
+  // "Tender deadlines should never rely on manual monitoring" — see
+  // docs/TENDER_DEADLINES.md, "How the automatic transition actually
+  // happens," for why this check runs here (on every Register load)
+  // rather than via a live background job, which this app doesn't have.
+  // Uses the RAW fetched status/stage, not any display-computed value —
+  // fire-and-forget, never blocks rendering the page.
+  void applyMissedStatusToAllOpenTenders(
+    tenders.map((t) => ({ id: String(t.id), closingDate: t.closing, status: t.status, stage: t.stage, ref: t.ref }))
+  );
 
   // "CEO / Manager Dashboard" — see docs/TENDER_ASSIGNMENT.md. Super
   // Admin and Management see every active assignment org-wide. A
@@ -46,6 +58,7 @@ export default async function TendersPage() {
     <TendersView
       tenders={tenders} checklist={checklist} canManage={canCreate} workflowCounts={workflowCounts}
       teamAssignments={teamAssignments} showTeamAssignments={isBroadVisibility || teamAssignments.length > 0}
+      closingSoonWarningDays={closingSoonWarningDays} canManageSettings={permissions.isAdmin}
     />
   );
 }

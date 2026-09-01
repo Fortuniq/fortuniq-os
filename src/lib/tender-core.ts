@@ -221,3 +221,74 @@ export function isTenderStale(
   const diffDays = (today.getTime() - new Date(lastActivityAt).getTime()) / 86400000;
   return diffDays >= thresholdDays;
 }
+
+// =========================================================================
+// AUTOMATIC TENDER DEADLINE MANAGEMENT — see docs/TENDER_DEADLINES.md
+// =========================================================================
+
+export const DEFAULT_CLOSING_SOON_WARNING_DAYS = 7;
+
+/**
+ * Days remaining until closing — negative once overdue. Pure date math,
+ * no time-of-day component (both dates compared at midnight), so
+ * "Today" means the whole calendar day, not the next 24 hours from now.
+ */
+export function calculateDaysRemaining(closingDate: string, today: Date = new Date()): number {
+  const closing = new Date(closingDate + "T00:00:00");
+  const todayMidnight = new Date(today.toDateString());
+  return Math.round((closing.getTime() - todayMidnight.getTime()) / 86400000);
+}
+
+/**
+ * Renders days-remaining exactly matching the brief's own examples:
+ * "10 Days Remaining", "Tomorrow", "Today", "Overdue by 2 Days".
+ */
+export function formatDaysRemaining(daysRemaining: number): string {
+  if (daysRemaining < 0) return `Overdue by ${Math.abs(daysRemaining)} Day${Math.abs(daysRemaining) === 1 ? "" : "s"}`;
+  if (daysRemaining === 0) return "Today";
+  if (daysRemaining === 1) return "Tomorrow";
+  return `${daysRemaining} Days Remaining`;
+}
+
+export function isClosingSoon(daysRemaining: number, warningDays: number = DEFAULT_CLOSING_SOON_WARNING_DAYS): boolean {
+  return daysRemaining > 0 && daysRemaining <= warningDays;
+}
+
+export function isDueToday(daysRemaining: number): boolean {
+  return daysRemaining === 0;
+}
+
+/**
+ * The actual decision logic for automatic Missed classification — the
+ * brief's own list, verbatim: closing date passed, not submitted, not
+ * Awarded, not Lost, not already manually closed another way. A tender
+ * already Missed is never re-flagged (idempotent — calling this
+ * repeatedly on an already-Missed tender is always false, there's
+ * nothing further to do).
+ */
+export function shouldAutoMarkMissed(tender: {
+  closingDate: string;
+  status: string;
+  stage: string | null;
+}, today: Date = new Date()): boolean {
+  if (tender.status === "Awarded" || tender.status === "Lost" || tender.status === "Missed") return false;
+  if (tender.stage === "Submitted") return false;
+  const daysRemaining = calculateDaysRemaining(tender.closingDate, today);
+  return daysRemaining < 0;
+}
+
+/**
+ * The status to actually DISPLAY, computed live — used everywhere a
+ * tender's status is shown, so the UI always reflects reality even in
+ * the brief window between a deadline passing and the next time
+ * applyMissedStatusIfNeeded() (tender-deadlines.ts) actually writes
+ * "Missed" to the database. See docs/TENDER_DEADLINES.md, "How the
+ * automatic transition actually happens."
+ */
+export function computeEffectiveTenderStatus(tender: { closingDate: string; status: string; stage: string | null }, today: Date = new Date()): string {
+  return shouldAutoMarkMissed(tender, today) ? "Missed" : tender.status;
+}
+
+export function computeEffectiveTenderStage(tender: { closingDate: string; status: string; stage: string | null }, today: Date = new Date()): string | null {
+  return shouldAutoMarkMissed(tender, today) ? "Closed — Missed" : tender.stage;
+}

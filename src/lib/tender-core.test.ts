@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment, formatRelativeActivityTime, isTenderStale } from "./tender-core";
+import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment, formatRelativeActivityTime, isTenderStale, calculateDaysRemaining, formatDaysRemaining, isClosingSoon, isDueToday, shouldAutoMarkMissed, computeEffectiveTenderStatus, computeEffectiveTenderStage } from "./tender-core";
 
 describe("calculateCompliancePct", () => {
   it("returns null, not 0, for a tender with no checklist yet", () => {
@@ -185,5 +185,107 @@ describe("isTenderStale", () => {
 
   it("treats an Open tender with no activity timestamp at all as stale", () => {
     expect(isTenderStale(null, "Open", NOW)).toBe(true);
+  });
+});
+
+describe("calculateDaysRemaining", () => {
+  const TODAY = new Date("2026-08-25T15:00:00");
+
+  it("returns 0 for today, matching the brief's 'Today' case", () => {
+    expect(calculateDaysRemaining("2026-08-25", TODAY)).toBe(0);
+  });
+
+  it("returns 1 for tomorrow", () => {
+    expect(calculateDaysRemaining("2026-08-26", TODAY)).toBe(1);
+  });
+
+  it("returns a negative number once overdue", () => {
+    expect(calculateDaysRemaining("2026-08-23", TODAY)).toBe(-2);
+  });
+
+  it("ignores time-of-day — only the calendar date matters", () => {
+    const lateInDay = new Date("2026-08-25T23:59:00");
+    expect(calculateDaysRemaining("2026-08-25", lateInDay)).toBe(0);
+  });
+});
+
+describe("formatDaysRemaining", () => {
+  it("matches the brief's exact examples", () => {
+    expect(formatDaysRemaining(10)).toBe("10 Days Remaining");
+    expect(formatDaysRemaining(3)).toBe("3 Days Remaining");
+    expect(formatDaysRemaining(1)).toBe("Tomorrow");
+    expect(formatDaysRemaining(0)).toBe("Today");
+    expect(formatDaysRemaining(-2)).toBe("Overdue by 2 Days");
+    expect(formatDaysRemaining(-14)).toBe("Overdue by 14 Days");
+  });
+
+  it("singularises 'Day' for exactly 1 day overdue", () => {
+    expect(formatDaysRemaining(-1)).toBe("Overdue by 1 Day");
+  });
+});
+
+describe("isClosingSoon / isDueToday", () => {
+  it("flags within the warning window but not today or overdue", () => {
+    expect(isClosingSoon(7)).toBe(true);
+    expect(isClosingSoon(1)).toBe(true);
+    expect(isClosingSoon(0)).toBe(false); // Today has its own indicator, not Closing Soon
+    expect(isClosingSoon(-1)).toBe(false);
+    expect(isClosingSoon(8)).toBe(false);
+  });
+
+  it("respects a custom warning period", () => {
+    expect(isClosingSoon(10, 14)).toBe(true);
+    expect(isClosingSoon(15, 14)).toBe(false);
+  });
+
+  it("isDueToday only true at exactly 0 days remaining", () => {
+    expect(isDueToday(0)).toBe(true);
+    expect(isDueToday(1)).toBe(false);
+    expect(isDueToday(-1)).toBe(false);
+  });
+});
+
+describe("shouldAutoMarkMissed", () => {
+  const TODAY = new Date("2026-08-25T12:00:00");
+
+  it("flags an Open tender past its closing date with no submission", () => {
+    expect(shouldAutoMarkMissed({ closingDate: "2026-08-20", status: "Open", stage: "Pricing" }, TODAY)).toBe(true);
+  });
+
+  it("does not flag a tender not yet past its closing date", () => {
+    expect(shouldAutoMarkMissed({ closingDate: "2026-08-25", status: "Open", stage: "Pricing" }, TODAY)).toBe(false);
+    expect(shouldAutoMarkMissed({ closingDate: "2026-09-01", status: "Open", stage: "Pricing" }, TODAY)).toBe(false);
+  });
+
+  it("never flags an Awarded tender", () => {
+    expect(shouldAutoMarkMissed({ closingDate: "2026-08-01", status: "Awarded", stage: "Submitted" }, TODAY)).toBe(false);
+  });
+
+  it("never flags a Lost tender", () => {
+    expect(shouldAutoMarkMissed({ closingDate: "2026-08-01", status: "Lost", stage: "Submitted" }, TODAY)).toBe(false);
+  });
+
+  it("never flags a tender already Missed — idempotent", () => {
+    expect(shouldAutoMarkMissed({ closingDate: "2026-08-01", status: "Missed", stage: "Closed — Missed" }, TODAY)).toBe(false);
+  });
+
+  it("never flags a tender that has actually been submitted, even past its closing date", () => {
+    expect(shouldAutoMarkMissed({ closingDate: "2026-08-01", status: "Open", stage: "Submitted" }, TODAY)).toBe(false);
+  });
+});
+
+describe("computeEffectiveTenderStatus / computeEffectiveTenderStage", () => {
+  const TODAY = new Date("2026-08-25T12:00:00");
+
+  it("overrides the stored status/stage to Missed/Closed — Missed once past due and unsubmitted", () => {
+    const tender = { closingDate: "2026-08-01", status: "Open", stage: "Pricing" };
+    expect(computeEffectiveTenderStatus(tender, TODAY)).toBe("Missed");
+    expect(computeEffectiveTenderStage(tender, TODAY)).toBe("Closed — Missed");
+  });
+
+  it("leaves status/stage untouched when the tender isn't overdue", () => {
+    const tender = { closingDate: "2026-09-01", status: "Open", stage: "Pricing" };
+    expect(computeEffectiveTenderStatus(tender, TODAY)).toBe("Open");
+    expect(computeEffectiveTenderStage(tender, TODAY)).toBe("Pricing");
   });
 });

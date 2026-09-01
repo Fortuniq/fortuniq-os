@@ -25,7 +25,8 @@ export type AuditAction =
   | "clocked_in"
   | "clocked_out"
   | "attendance_correction_requested"
-  | "attendance_correction_reviewed";
+  | "attendance_correction_reviewed"
+  | "tender_auto_missed";
 
 /**
  * Records an entry in the audit log. Used across the app wherever a

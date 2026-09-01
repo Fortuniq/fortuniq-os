@@ -10,10 +10,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StickyScrollDataTable } from "@/components/ui/StickyScrollDataTable";
 import { type Column } from "@/components/ui/DataTable";
 import { formatDate, formatZARCompact } from "@/lib/format";
-import { formatRelativeActivityTime, isTenderStale } from "@/lib/tender-core";
+import { formatRelativeActivityTime, isTenderStale, computeEffectiveTenderStatus, computeEffectiveTenderStage, calculateDaysRemaining, formatDaysRemaining, isClosingSoon, isDueToday } from "@/lib/tender-core";
 import { TenderFormModal } from "./TenderFormModal";
-import { deleteTender } from "./tender-actions";
+import { deleteTender, updateClosingSoonWarningDaysAction } from "./tender-actions";
 import { TeamAssignmentsWidget } from "./TeamAssignmentsWidget";
+import { NextDeadlinesWidget } from "./NextDeadlinesWidget";
 
 type Tender = {
   id: string | number;
@@ -40,11 +41,16 @@ type ChecklistItem = { item: string; done: boolean };
 const TENDER_BOX_URL =
   "https://iqfuels.sharepoint.com/:f:/s/FortunIQDocuments/IgBnsyJtiKwQTIqoz7J5F-u3ASuq5RRrYVK1mu13szDkpeA?e=h5XHOL";
 
-export function TendersView({ tenders, checklist, canManage, workflowCounts, teamAssignments, showTeamAssignments }: {
+export function TendersView({ tenders, checklist, canManage, workflowCounts, teamAssignments, showTeamAssignments, closingSoonWarningDays, canManageSettings }: {
   tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean;
-  workflowCounts: { drafting: number; pricing: number; awaitingAssessment: number; submissionReady: number; dueThisWeek: number; overdueTasks: number };
+  workflowCounts: {
+    drafting: number; pricing: number; awaitingAssessment: number; submissionReady: number; dueThisWeek: number; overdueTasks: number;
+    dueToday: number; closingThisWeek: number; closingThisMonth: number; missed: number; submitted: number; awarded: number; lost: number;
+  };
   teamAssignments: { id: string; tenderId: string; tenderRef: string; tenderTitle: string; stage: string; ownerEmail: string; ownerName: string | null; dueDate: string | null; priority: string; status: string; compliance: number }[];
   showTeamAssignments: boolean;
+  closingSoonWarningDays: number;
+  canManageSettings: boolean;
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTender, setEditingTender] = useState<Tender | null>(null);
@@ -102,9 +108,36 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
         </div>
       ),
     },
-    { key: "closing", header: "Closing", render: (r) => formatDate(r.closing) },
-    { key: "status", header: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
-    { key: "stage", header: "Stage" },
+    {
+      key: "closing", header: "Closing",
+      render: (r) => {
+        const days = calculateDaysRemaining(r.closing);
+        const effectiveStatus = computeEffectiveTenderStatus({ closingDate: r.closing, status: r.status, stage: r.stage });
+        const showIndicator = effectiveStatus === "Open" && (isDueToday(days) || isClosingSoon(days, closingSoonWarningDays));
+        return (
+          <div>
+            <p className="text-sm text-navy">{formatDate(r.closing)}</p>
+            {showIndicator && (
+              <p className={`text-xs font-semibold ${isDueToday(days) ? "text-amber-600" : "text-orange"}`}>
+                {isDueToday(days) ? "🟡 Due Today" : "🟠 Closing Soon"}
+              </p>
+            )}
+            {effectiveStatus === "Missed" && <p className="text-xs font-semibold text-red-600">🔴 {formatDaysRemaining(days)}</p>}
+          </div>
+        );
+      },
+    },
+    {
+      key: "status", header: "Status",
+      render: (r) => {
+        const effective = computeEffectiveTenderStatus({ closingDate: r.closing, status: r.status, stage: r.stage });
+        return <Badge tone={statusTone(effective)}>{effective}</Badge>;
+      },
+    },
+    {
+      key: "stage", header: "Stage",
+      render: (r) => computeEffectiveTenderStage({ closingDate: r.closing, status: r.status, stage: r.stage }) ?? "—",
+    },
     { key: "value", header: "Value", align: "right", render: (r) => formatZARCompact(r.value) },
     {
       key: "compliance",
@@ -221,6 +254,28 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
         ))}
       </div>
 
+      {/* Deadline & outcome counters (section 10) — same clickable-filter pattern as the workflow row above. See docs/TENDER_DEADLINES.md. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+        {[
+          { label: "Due Today", value: workflowCounts.dueToday, status: null },
+          { label: "Closing This Week", value: workflowCounts.closingThisWeek, status: null },
+          { label: "Closing This Month", value: workflowCounts.closingThisMonth, status: null },
+          { label: "Missed", value: workflowCounts.missed, status: "Missed" },
+          { label: "Submitted", value: workflowCounts.submitted, status: null },
+          { label: "Awarded", value: workflowCounts.awarded, status: "Awarded" },
+          { label: "Lost", value: workflowCounts.lost, status: "Lost" },
+        ].map((m) => (
+          <button
+            key={m.label}
+            onClick={() => m.status && setStatusFilter(statusFilter === m.status ? "" : m.status)}
+            className={`text-left p-3 rounded-lg border transition-colors ${statusFilter === m.status && m.status ? "border-orange bg-orange/5" : "border-border hover:border-orange"}`}
+          >
+            <p className="text-lg font-black text-navy">{m.value}</p>
+            <p className="text-[11px] text-grey">{m.label}</p>
+          </button>
+        ))}
+      </div>
+
       {showTeamAssignments && <TeamAssignmentsWidget assignments={teamAssignments} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -279,6 +334,8 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
         </Card>
 
         <div className="space-y-4">
+          <NextDeadlinesWidget tenders={tenders} warningDays={closingSoonWarningDays} />
+          {canManageSettings && <ClosingSoonSettingsCard currentDays={closingSoonWarningDays} />}
           <Card className="border-orange/30">
             <CardHeader>
               <CardTitle>
@@ -333,5 +390,41 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
       {showAddForm && <TenderFormModal onClose={() => setShowAddForm(false)} />}
       {editingTender && <TenderFormModal tender={editingTender} onClose={() => setEditingTender(null)} />}
     </div>
+  );
+}
+
+/** "Allow the warning period to be configurable in Settings" — a compact inline control, Super Admin only. See docs/TENDER_DEADLINES.md. */
+function ClosingSoonSettingsCard({ currentDays }: { currentDays: number }) {
+  const [value, setValue] = useState(String(currentDays));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    const days = Number(value);
+    if (!Number.isFinite(days) || days <= 0) return;
+    setSaving(true);
+    setSaved(false);
+    const result = await updateClosingSoonWarningDaysAction(days);
+    setSaving(false);
+    if (result?.error) alert(result.error);
+    else { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  }
+
+  return (
+    <Card>
+      <CardBody>
+        <p className="text-xs font-semibold text-grey uppercase tracking-wide mb-2">Closing Soon Warning</p>
+        <div className="flex items-center gap-2">
+          <input
+            type="number" min={1} value={value} onChange={(e) => setValue(e.target.value)}
+            className="w-16 text-sm px-2 py-1.5 rounded-lg border border-border"
+          />
+          <span className="text-xs text-grey">days</span>
+          <button onClick={save} disabled={saving} className="text-xs font-semibold text-white bg-navy px-3 py-1.5 rounded-lg hover:bg-orange transition-colors disabled:opacity-50 ml-auto">
+            {saving ? "Saving…" : saved ? "Saved" : "Save"}
+          </button>
+        </div>
+      </CardBody>
+    </Card>
   );
 }

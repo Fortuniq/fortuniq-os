@@ -27,7 +27,7 @@ export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; childr
 export function statusTone(status: string): BadgeTone {
   const s = status.toLowerCase();
   if (["active", "paid", "won", "delivered", "open", "available"].includes(s)) return "success";
-  if (["overdue", "lost", "maintenance", "high"].includes(s)) return "danger";
+  if (["overdue", "lost", "missed", "maintenance", "high"].includes(s)) return "danger";
   if (["pending", "sent", "draft", "scheduled", "medium", "onboarding"].includes(s)) return "warning";
   if (["in transit", "loading", "negotiation", "on route", "prospect"].includes(s)) return "info";
   return "neutral";

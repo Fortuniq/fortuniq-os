@@ -5,17 +5,17 @@ import { ArrowRight, ArrowLeft, Send, Upload, User, AlertTriangle, RefreshCw } f
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/format";
-import { moveTenderStage, recordTenderSubmission, reassignTenderStage } from "../tender-actions";
-import { normalizeTenderStage, isStageOverdue } from "@/lib/tender-core";
+import { moveTenderStage, recordTenderSubmission, reassignTenderStage, reopenMissedTender } from "../tender-actions";
+import { normalizeTenderStage, isStageOverdue, computeEffectiveTenderStatus } from "@/lib/tender-core";
 import type { TenderStageAssignment } from "@/lib/tender-assignments";
 
 const STAGES = ["Drafting", "Pricing", "Assessment & Verification", "Submission Ready", "Submitted"] as const;
 type Stage = (typeof STAGES)[number];
 
 export function TenderWorkflowControl({
-  tenderId, currentStage, canEdit, canApprove, currentAssignment,
+  tenderId, currentStage, closingDate, status, canEdit, canApprove, currentAssignment,
 }: {
-  tenderId: string; currentStage: string; canEdit: boolean; canApprove: boolean;
+  tenderId: string; currentStage: string; closingDate: string; status: string; canEdit: boolean; canApprove: boolean;
   currentAssignment: TenderStageAssignment | null;
 }) {
   const stage = normalizeTenderStage(currentStage) as Stage;
@@ -23,15 +23,39 @@ export function TenderWorkflowControl({
   const [showSubmit, setShowSubmit] = useState(false);
   const [showReassign, setShowReassign] = useState(false);
   const [pendingMove, setPendingMove] = useState<Stage | null>(null);
+  const [reopenPending, startReopenTransition] = useTransition();
+
+  const effectiveStatus = computeEffectiveTenderStatus({ closingDate, status, stage: currentStage });
+  const isMissed = effectiveStatus === "Missed";
 
   const nextStage = idx < STAGES.length - 1 ? STAGES[idx + 1] : null;
   const prevStage = idx > 0 ? STAGES[idx - 1] : null;
   const overdue = currentAssignment ? isStageOverdue(currentAssignment) : false;
 
+  function reopen() {
+    startReopenTransition(async () => {
+      const result = await reopenMissedTender(tenderId);
+      if (result?.error) alert(result.error);
+    });
+  }
+
   return (
-    <Card>
+    <Card className={isMissed ? "border-red-300" : undefined}>
       <CardHeader><CardTitle>Tender Workflow</CardTitle></CardHeader>
       <CardBody>
+        {isMissed && (
+          <div className="flex items-center justify-between mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
+            <p className="text-sm text-red-700 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" /> Automatically marked <strong>Missed</strong> — closing date expired without submission. This tender is read-only until reopened.
+            </p>
+            {canApprove && (
+              <button onClick={reopen} disabled={reopenPending} className="text-xs font-semibold text-white bg-red-600 px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 shrink-0 ml-3">
+                {reopenPending ? "Reopening…" : "Reopen Tender"}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5 mb-4">
           {STAGES.map((s, i) => (
             <Badge key={s} tone={i === idx ? "info" : i < idx ? "success" : "neutral"}>{s}</Badge>
@@ -51,7 +75,7 @@ export function TenderWorkflowControl({
             </div>
             <div className="flex items-center gap-2">
               {overdue && <span className="flex items-center gap-1 text-xs font-semibold text-red-600"><AlertTriangle className="w-3.5 h-3.5" /> Overdue</span>}
-              {canEdit && (
+              {canEdit && !isMissed && (
                 <button onClick={() => setShowReassign(true)} className="flex items-center gap-1 text-xs text-grey hover:text-orange">
                   <RefreshCw className="w-3.5 h-3.5" /> Reassign
                 </button>
@@ -62,28 +86,30 @@ export function TenderWorkflowControl({
           <p className="text-xs text-amber-700 mb-4">No owner assigned to this stage yet.</p>
         )}
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {prevStage && canEdit && (
-            <button onClick={() => setPendingMove(prevStage)} className="flex items-center gap-1 text-xs font-semibold text-grey border border-border px-3 py-2 rounded-lg hover:border-orange hover:text-orange transition-colors">
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to {prevStage}
-            </button>
-          )}
-          {nextStage && nextStage !== "Submitted" && (canEdit || canApprove) && (
-            <button
-              onClick={() => setPendingMove(nextStage)}
-              disabled={nextStage === "Submission Ready" && !canApprove}
-              title={nextStage === "Submission Ready" && !canApprove ? "Requires Approve permission" : undefined}
-              className="flex items-center gap-1 text-xs font-semibold text-white bg-navy px-3 py-2 rounded-lg hover:bg-orange transition-colors disabled:opacity-50"
-            >
-              Move to {nextStage} <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-          {stage === "Submission Ready" && canEdit && (
-            <button onClick={() => setShowSubmit(true)} className="flex items-center gap-1 text-xs font-semibold text-white bg-orange px-3 py-2 rounded-lg hover:bg-navy transition-colors">
-              <Send className="w-3.5 h-3.5" /> Record Submission
-            </button>
-          )}
-        </div>
+        {!isMissed && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {prevStage && canEdit && (
+              <button onClick={() => setPendingMove(prevStage)} className="flex items-center gap-1 text-xs font-semibold text-grey border border-border px-3 py-2 rounded-lg hover:border-orange hover:text-orange transition-colors">
+                <ArrowLeft className="w-3.5 h-3.5" /> Back to {prevStage}
+              </button>
+            )}
+            {nextStage && nextStage !== "Submitted" && (canEdit || canApprove) && (
+              <button
+                onClick={() => setPendingMove(nextStage)}
+                disabled={nextStage === "Submission Ready" && !canApprove}
+                title={nextStage === "Submission Ready" && !canApprove ? "Requires Approve permission" : undefined}
+                className="flex items-center gap-1 text-xs font-semibold text-white bg-navy px-3 py-2 rounded-lg hover:bg-orange transition-colors disabled:opacity-50"
+              >
+                Move to {nextStage} <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {stage === "Submission Ready" && canEdit && (
+              <button onClick={() => setShowSubmit(true)} className="flex items-center gap-1 text-xs font-semibold text-white bg-orange px-3 py-2 rounded-lg hover:bg-navy transition-colors">
+                <Send className="w-3.5 h-3.5" /> Record Submission
+              </button>
+            )}
+          </div>
+        )}
       </CardBody>
 
       {pendingMove && <AssignStageModal tenderId={tenderId} newStage={pendingMove} onClose={() => setPendingMove(null)} />}

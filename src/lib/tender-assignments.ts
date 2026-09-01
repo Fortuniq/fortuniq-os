@@ -104,7 +104,7 @@ export async function getOverdueTenderAssignments(): Promise<(TenderStageAssignm
 export type StageAssignmentHistoryEntry = {
   id: string;
   stage: TenderWorkflowStage;
-  eventType: "Assigned" | "Reassigned" | "Completed" | "Due Date Changed";
+  eventType: "Assigned" | "Reassigned" | "Completed" | "Due Date Changed" | "Missed" | "Reopened";
   previousOwnerEmail: string | null;
   previousOwnerName: string | null;
   newOwnerEmail: string | null;

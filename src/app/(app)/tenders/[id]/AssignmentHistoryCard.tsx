@@ -8,6 +8,8 @@ const EVENT_LABEL: Record<string, string> = {
   Reassigned: "Reassigned",
   Completed: "Completed",
   "Due Date Changed": "Due date changed",
+  Missed: "Marked Missed",
+  Reopened: "Reopened",
 };
 
 /**

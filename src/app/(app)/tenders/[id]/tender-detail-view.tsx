@@ -16,6 +16,7 @@ import {
 } from "../tender-actions";
 import { TenderWorkflowControl } from "./TenderWorkflowControl";
 import { AssignmentHistoryCard } from "./AssignmentHistoryCard";
+import { computeEffectiveTenderStatus, computeEffectiveTenderStage, calculateDaysRemaining, formatDaysRemaining } from "@/lib/tender-core";
 import type { TenderStageAssignment, StageAssignmentHistoryEntry } from "@/lib/tender-assignments";
 
 type Tab = "overview" | "compliance" | "documents" | "submissions";
@@ -40,7 +41,9 @@ export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfig
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="font-display text-2xl font-black text-navy">{tender.title}</h1>
-            <Badge tone={statusTone(tender.status)}>{tender.status}</Badge>
+            <Badge tone={statusTone(computeEffectiveTenderStatus({ closingDate: tender.closing, status: tender.status, stage: tender.stage }))}>
+              {computeEffectiveTenderStatus({ closingDate: tender.closing, status: tender.status, stage: tender.stage })}
+            </Badge>
           </div>
           <p className="text-sm text-grey mt-1 font-mono">{tender.ref}</p>
         </div>
@@ -65,7 +68,7 @@ export function TenderDetailView({ tender, canEdit, canApprove, sharePointConfig
 
       {tab === "overview" && (
         <div className="space-y-4 max-w-xl">
-          <TenderWorkflowControl tenderId={String(tender.id)} currentStage={tender.stage ?? "Drafting"} canEdit={canEdit} canApprove={canApprove} currentAssignment={currentAssignment} />
+          <TenderWorkflowControl tenderId={String(tender.id)} currentStage={tender.stage ?? "Drafting"} closingDate={tender.closing} status={tender.status} canEdit={canEdit} canApprove={canApprove} currentAssignment={currentAssignment} />
           <WorkflowSummaryCard tender={tender} currentAssignment={currentAssignment} />
           <AssignmentHistoryCard history={history} />
           <OverviewTab tender={tender} currentAssignment={currentAssignment} />
@@ -93,7 +96,7 @@ function OverviewTab({ tender, currentAssignment }: { tender: TenderDetail; curr
       <CardBody>
         <InfoRow label="Reference" value={tender.ref} />
         <InfoRow label="Closing Date" value={formatDate(tender.closing)} />
-        <InfoRow label="Status" value={tender.status} />
+        <InfoRow label="Status" value={computeEffectiveTenderStatus({ closingDate: tender.closing, status: tender.status, stage: tender.stage })} />
         <InfoRow label="Value" value={formatZARFull(tender.value)} />
         <InfoRow label="Compliance" value={`${tender.compliance}%`} />
       </CardBody>
@@ -109,18 +112,27 @@ function OverviewTab({ tender, currentAssignment }: { tender: TenderDetail; curr
  * own page. See docs/TENDER_REGISTER.md, "Workflow Summary."
  */
 function WorkflowSummaryCard({ tender, currentAssignment }: { tender: TenderDetail; currentAssignment: TenderStageAssignment | null }) {
+  const effectiveStatus = computeEffectiveTenderStatus({ closingDate: tender.closing, status: tender.status, stage: tender.stage });
+  const effectiveStage = computeEffectiveTenderStage({ closingDate: tender.closing, status: tender.status, stage: tender.stage });
+  const days = calculateDaysRemaining(tender.closing);
+
   return (
     <Card className="max-w-xl">
       <CardHeader><CardTitle>Workflow Summary</CardTitle></CardHeader>
       <CardBody>
         <InfoRow label="Created On" value={tender.createdAt ? formatDate(tender.createdAt) : "—"} />
         <InfoRow label="Created By" value={tender.createdByName ?? "—"} />
-        <InfoRow label="Current Stage" value={tender.stage} />
         <InfoRow label="Assigned To" value={currentAssignment?.ownerName ?? tender.assignedToName ?? "Not Assigned"} />
+        <InfoRow label="Closing Date" value={formatDate(tender.closing)} />
+        <InfoRow
+          label="Days Remaining"
+          value={days < 0 ? <span className="text-red-600 font-semibold">⚠ Overdue by {Math.abs(days)} Day{Math.abs(days) === 1 ? "" : "s"}</span> : formatDaysRemaining(days)}
+        />
+        <InfoRow label="Current Stage" value={effectiveStage ?? "—"} />
+        <InfoRow label="Status" value={effectiveStatus} />
         <InfoRow label="Assigned On" value={currentAssignment?.assignedAt ? formatDate(currentAssignment.assignedAt) : "—"} />
-        <InfoRow label="Due Date" value={currentAssignment?.dueDate ? formatDate(currentAssignment.dueDate) : "—"} />
+        <InfoRow label="Stage Due Date" value={currentAssignment?.dueDate ? formatDate(currentAssignment.dueDate) : "—"} />
         <InfoRow label="Priority" value={currentAssignment?.priority ?? "—"} />
-        <InfoRow label="Status" value={currentAssignment?.status ?? "—"} />
         <InfoRow
           label="Last Activity"
           value={tender.lastActivityAt ? `${formatDate(tender.lastActivityAt)}${tender.lastActivityDescription ? ` — ${tender.lastActivityDescription}` : ""}` : "—"}

@@ -378,17 +378,21 @@ export async function getExpiringDocuments() {
  * relies on, rather than a separate tender-task-counting system.
  */
 export async function getTenderWorkflowCounts() {
-  const empty = { drafting: 0, pricing: 0, awaitingAssessment: 0, submissionReady: 0, dueThisWeek: 0, overdueTasks: 0 };
+  const empty = {
+    drafting: 0, pricing: 0, awaitingAssessment: 0, submissionReady: 0, dueThisWeek: 0, overdueTasks: 0,
+    dueToday: 0, closingThisWeek: 0, closingThisMonth: 0, missed: 0, submitted: 0, awarded: 0, lost: 0,
+  };
   if (!supabaseConfigured) return empty;
   try {
     const supabase = createServiceClient();
-    const [{ data: tenders }, { data: tasks }] = await Promise.all([
+    const [{ data: openTenders }, { data: allTenders }, { data: tasks }] = await Promise.all([
       supabase.from("tenders").select("stage").in("status", ["Open"]),
+      supabase.from("tenders").select("closing_date, status, stage"),
       supabase.from("tasks").select("due_date, status").eq("module_key", "tenders").neq("status", "Completed"),
     ]);
 
     const counts = { ...empty };
-    for (const t of tenders ?? []) {
+    for (const t of openTenders ?? []) {
       if (t.stage === "Drafting") counts.drafting++;
       else if (t.stage === "Pricing") counts.pricing++;
       else if (t.stage === "Assessment & Verification") counts.awaitingAssessment++;
@@ -397,11 +401,34 @@ export async function getTenderWorkflowCounts() {
 
     const today = new Date();
     const weekFromNow = new Date(today.getTime() + 7 * 86400000);
+    const monthFromNow = new Date(today.getTime() + 30 * 86400000);
+    const todayMidnight = new Date(today.toDateString());
+
     for (const task of tasks ?? []) {
       if (!task.due_date) continue;
       const due = new Date(task.due_date + "T00:00:00");
-      if (due < new Date(today.toDateString())) counts.overdueTasks++;
+      if (due < todayMidnight) counts.overdueTasks++;
       else if (due <= weekFromNow) counts.dueThisWeek++;
+    }
+
+    // Dashboard counters (section 10) — computed the same way
+    // shouldAutoMarkMissed/computeEffectiveTenderStatus reason about
+    // status, just aggregated across every tender rather than per-row
+    // display. See docs/TENDER_DEADLINES.md.
+    for (const t of allTenders ?? []) {
+      if (t.status === "Awarded") { counts.awarded++; continue; }
+      if (t.status === "Lost") { counts.lost++; continue; }
+      if (t.status === "Missed" || (t.status === "Open" && t.stage !== "Submitted" && new Date(t.closing_date + "T00:00:00") < todayMidnight)) {
+        counts.missed++;
+        continue;
+      }
+      if (t.stage === "Submitted") { counts.submitted++; continue; }
+      if (t.status === "Open") {
+        const closing = new Date(t.closing_date + "T00:00:00");
+        if (closing.getTime() === todayMidnight.getTime()) counts.dueToday++;
+        if (closing >= todayMidnight && closing <= weekFromNow) counts.closingThisWeek++;
+        if (closing >= todayMidnight && closing <= monthFromNow) counts.closingThisMonth++;
+      }
     }
 
     return counts;

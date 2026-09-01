@@ -5,6 +5,7 @@ import { checkPermissionAction } from "@/lib/rbac";
 import { isSharePointConfigured } from "@/lib/graph";
 import { getTenderStageAssignments, getTenderStageAssignmentHistory } from "@/lib/tender-assignments";
 import { normalizeTenderStage } from "@/lib/tender-core";
+import { applyMissedStatusIfNeeded } from "@/lib/tender-deadlines";
 import { TenderDetailView } from "./tender-detail-view";
 
 export default async function TenderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +19,12 @@ export default async function TenderDetailPage({ params }: { params: Promise<{ i
   ]);
 
   if (!tender) notFound();
+
+  // Fire-and-forget — see docs/TENDER_DEADLINES.md. Uses the raw
+  // fetched status/stage; the view itself computes the effective
+  // (possibly Missed) status live regardless of whether this write
+  // has landed yet.
+  void applyMissedStatusIfNeeded({ id: tender.id, closingDate: tender.closing, status: tender.status, stage: tender.stage, ref: tender.ref });
 
   const assignments = await getTenderStageAssignments(tender.id);
   const history = await getTenderStageAssignmentHistory(tender.id);
