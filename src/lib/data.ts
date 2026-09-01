@@ -456,7 +456,7 @@ export async function getTenders() {
       };
     });
   } catch {
-    return mock.tenders;
+    return mockFallback();
   }
 }
 
