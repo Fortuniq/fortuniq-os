@@ -4,6 +4,8 @@ import {
   calculateDocumentTotals, formatDocumentNumber, sequenceKeyFor, documentHeading,
   requiresRevisionToEdit, statusAfterRevised, calculateOutstandingBalance,
   derivePaymentStatus, formatCustomerCode, validateLineItems, DEFAULT_NON_VAT_NOTICE,
+  isPreIssueQuotationStatus, evaluateVatApplicability, NOT_VAT_REGISTERED_NOTICE,
+  canAccessCustomerForQuotation, buildDocumentSnapshot,
 } from "./finance-core";
 
 describe("roundToCents", () => {
@@ -157,5 +159,135 @@ describe("validateLineItems", () => {
 describe("DEFAULT_NON_VAT_NOTICE", () => {
   it("is present and does not claim VAT registration", () => {
     expect(DEFAULT_NON_VAT_NOTICE).toContain("not registered as a VAT vendor");
+  });
+});
+
+describe("isPreIssueQuotationStatus", () => {
+  it("Draft and Pending Approval are pre-issue", () => {
+    expect(isPreIssueQuotationStatus("Draft")).toBe(true);
+    expect(isPreIssueQuotationStatus("Pending Approval")).toBe(true);
+  });
+  it("Approved onward is issued", () => {
+    expect(isPreIssueQuotationStatus("Approved")).toBe(false);
+    expect(isPreIssueQuotationStatus("Sent")).toBe(false);
+    expect(isPreIssueQuotationStatus("Revised")).toBe(false);
+  });
+});
+
+describe("evaluateVatApplicability — the VAT hard block", () => {
+  const financeAdmin = { requesterIsAdmin: true, requesterRole: null };
+  const financeUser = { requesterIsAdmin: false, requesterRole: "Finance" };
+  const salesUser = { requesterIsAdmin: false, requesterRole: "Sales/Marketing" };
+
+  it("blocks when FortunIQ is not VAT registered, even if everything else is set", () => {
+    const result = evaluateVatApplicability({
+      settings: { companyVatRegistered: false, vatRegistrationNumber: "4123456789", vatEffectiveDate: "2026-01-01", vatRate: 15 },
+      transactionDate: "2026-09-17",
+      ...financeAdmin,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.vatRate).toBe(0);
+  });
+
+  it("blocks when registered but no VAT number on file", () => {
+    const result = evaluateVatApplicability({
+      settings: { companyVatRegistered: true, vatRegistrationNumber: null, vatEffectiveDate: "2026-01-01", vatRate: 15 },
+      transactionDate: "2026-09-17",
+      ...financeAdmin,
+    });
+    expect(result.allowed).toBe(false);
+  });
+
+  it("blocks when registered but no effective date on file", () => {
+    const result = evaluateVatApplicability({
+      settings: { companyVatRegistered: true, vatRegistrationNumber: "4123456789", vatEffectiveDate: null, vatRate: 15 },
+      transactionDate: "2026-09-17",
+      ...financeAdmin,
+    });
+    expect(result.allowed).toBe(false);
+  });
+
+  it("blocks a document dated before the VAT effective date", () => {
+    const result = evaluateVatApplicability({
+      settings: { companyVatRegistered: true, vatRegistrationNumber: "4123456789", vatEffectiveDate: "2027-01-01", vatRate: 15 },
+      transactionDate: "2026-09-17",
+      ...financeAdmin,
+    });
+    expect(result.allowed).toBe(false);
+  });
+
+  it("blocks a Sales user even when company config is fully valid", () => {
+    const result = evaluateVatApplicability({
+      settings: { companyVatRegistered: true, vatRegistrationNumber: "4123456789", vatEffectiveDate: "2026-01-01", vatRate: 15 },
+      transactionDate: "2026-09-17",
+      ...salesUser,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Finance or Super Admin");
+  });
+
+  it("allows only when every condition holds and requester is Finance or Super Admin", () => {
+    const config = { companyVatRegistered: true, vatRegistrationNumber: "4123456789", vatEffectiveDate: "2026-01-01", vatRate: 15 };
+    const asFinance = evaluateVatApplicability({ settings: config, transactionDate: "2026-09-17", ...financeUser });
+    const asAdmin = evaluateVatApplicability({ settings: config, transactionDate: "2026-09-17", ...financeAdmin });
+    expect(asFinance.allowed).toBe(true);
+    expect(asFinance.vatRate).toBe(15);
+    expect(asAdmin.allowed).toBe(true);
+  });
+
+  it("today's real FortunIQ state (not VAT registered) always blocks, regardless of who asks", () => {
+    const today = evaluateVatApplicability({
+      settings: { companyVatRegistered: false, vatRegistrationNumber: null, vatEffectiveDate: null, vatRate: 15 },
+      transactionDate: "2026-09-17",
+      ...financeAdmin,
+    });
+    expect(today.allowed).toBe(false);
+  });
+});
+
+describe("NOT_VAT_REGISTERED_NOTICE", () => {
+  it("matches the exact required wording", () => {
+    expect(NOT_VAT_REGISTERED_NOTICE).toBe(
+      "FortunIQ Fuels (Pty) Ltd is currently not registered as a Value-Added Tax (VAT) vendor. Accordingly, no VAT has been charged or included in this quotation/invoice."
+    );
+  });
+});
+
+describe("canAccessCustomerForQuotation — ownership scoping", () => {
+  it("Super Admin always passes", () => {
+    expect(canAccessCustomerForQuotation({ requesterIsAdmin: true, requesterRole: null, requesterEmail: "x@fortuniq.co.za", customerAccountOwnerEmail: "someone.else@fortuniq.co.za" })).toBe(true);
+  });
+  it("Finance and Management always pass", () => {
+    expect(canAccessCustomerForQuotation({ requesterIsAdmin: false, requesterRole: "Finance", requesterEmail: "x@fortuniq.co.za", customerAccountOwnerEmail: "someone.else@fortuniq.co.za" })).toBe(true);
+    expect(canAccessCustomerForQuotation({ requesterIsAdmin: false, requesterRole: "Management", requesterEmail: "x@fortuniq.co.za", customerAccountOwnerEmail: "someone.else@fortuniq.co.za" })).toBe(true);
+  });
+  it("an unassigned account (no owner) is open to any Sales user", () => {
+    expect(canAccessCustomerForQuotation({ requesterIsAdmin: false, requesterRole: "Sales/Marketing", requesterEmail: "katlego@fortuniq.co.za", customerAccountOwnerEmail: null })).toBe(true);
+  });
+  it("a Sales user can access their own assigned account", () => {
+    expect(canAccessCustomerForQuotation({ requesterIsAdmin: false, requesterRole: "Sales/Marketing", requesterEmail: "Katlego@FortunIQ.co.za", customerAccountOwnerEmail: "katlego@fortuniq.co.za" })).toBe(true);
+  });
+  it("a Sales user is blocked from another rep's assigned account", () => {
+    expect(canAccessCustomerForQuotation({ requesterIsAdmin: false, requesterRole: "Sales/Marketing", requesterEmail: "thabo@fortuniq.co.za", customerAccountOwnerEmail: "katlego@fortuniq.co.za" })).toBe(false);
+  });
+});
+
+describe("buildDocumentSnapshot", () => {
+  it("captures customer VAT status independently of FortunIQ's own VAT status", () => {
+    const snapshot = buildDocumentSnapshot({
+      customer: { name: "Rustenburg Mining Group", vatRegistered: true, vatNumber: "4123456789" },
+      company: { registrationNumber: "2020/000000/07" },
+      vat: { applied: false, rate: 0, amount: 0 },
+      lineItems: computeLineItems([{ productService: "Diesel", quantity: 39_864, unitPrice: 25.20 }]),
+      totals: calculateDocumentTotals([{ productService: "Diesel", quantity: 39_864, unitPrice: 25.20 }], { vatApplied: false, vatRate: 15 }),
+      templateVersion: "v1",
+    });
+    // Customer's own VAT registration is preserved for display...
+    expect(snapshot.customer.vatRegistered).toBe(true);
+    expect(snapshot.customer.vatNumber).toBe("4123456789");
+    // ...but never causes VAT to be applied on the document itself.
+    expect(snapshot.vat.applied).toBe(false);
+    expect(snapshot.totals.total).toBe(snapshot.totals.subtotal);
+    expect(snapshot.snapshotTakenAt).toBeTruthy();
   });
 });

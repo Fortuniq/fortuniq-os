@@ -1,6 +1,7 @@
 "use client";
 
-import { Wallet, TrendingDown, AlertCircle, Building2 } from "lucide-react";
+import Link from "next/link";
+import { Wallet, TrendingDown, AlertCircle, Building2, FileText, ArrowRight } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
@@ -36,6 +37,17 @@ export function FinanceView({
   return (
     <div>
       <PageHeader title="Finance" description="Invoices, expenses, purchase orders, suppliers and budgets." />
+
+      <Link href="/finance/quotations" className="flex items-center justify-between bg-navy text-white rounded-xl px-5 py-4 mb-6 hover:bg-orange transition-colors group">
+        <div className="flex items-center gap-3">
+          <FileText className="w-5 h-5" />
+          <div>
+            <p className="font-semibold text-sm">Quotations</p>
+            <p className="text-xs text-white/70">Formal, numbered quotations issued to customers</p>
+          </div>
+        </div>
+        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+      </Link>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Outstanding" value={formatZARCompact(totalOutstanding)} icon={Wallet} />

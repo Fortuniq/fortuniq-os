@@ -10,13 +10,110 @@ phase ships. See `supabase/migration_v27_finance.sql` for the schema.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Finance schema + Customers integration | ✅ Done |
-| 2 | Quotations CRUD | Not started |
+| 2 | Quotations CRUD | ✅ Done |
 | 3 | Calculation Engine (Qty × Rate) | ✅ Done (`finance-core.ts`) — reused by Phase 2/5 |
 | 4 | Branded PDF quotation generation | Not started |
 | 5 | Invoices CRUD | Not started |
 | 6 | Quotation → Invoice conversion | Not started |
 | 7 | Payments & outstanding balances | Not started |
-| 8 | SharePoint storage + audit trail | Not started |
+| 8 | SharePoint storage + audit trail | Partial — audit logging for every quotation lifecycle event is done (see below); SharePoint document storage is still Phase 8/4 |
+
+## Phase 2 additions (VAT hard block, snapshots, numbering-at-approval, ownership)
+
+**The VAT hard block is enforced server-side, not by trusting a flag.**
+`evaluateVatApplicability()` in `finance-core.ts` is the ONLY function
+allowed to say VAT may be applied, and every one of these must hold —
+checked fresh, every time, never cached:
+1. `finance_vat_registered = true` in Finance Settings.
+2. A non-blank `finance_vat_registration_number` is on file.
+3. A non-blank `finance_vat_effective_date` is on file.
+4. The document's own transaction/issue date is on or after that
+   effective date (so a document dated before liability began can never
+   carry VAT, even once VAT registration exists).
+5. The requesting user is Super Admin or holds the Finance role.
+
+Every quotation server action (`createQuotationDraft`,
+`updateQuotationDraft`, `approveQuotation`) calls this gate itself and
+uses ITS result — a client can send whatever it wants in the form, it is
+never trusted. Today, condition 1 alone always fails (FortunIQ Fuels is
+not VAT registered), so every document is created with `vat_applied =
+false`, `vat_amount = 0`, `total = subtotal`, and carries the required
+notice: *"FortunIQ Fuels (Pty) Ltd is currently not registered as a
+Value-Added Tax (VAT) vendor. Accordingly, no VAT has been charged or
+included in this quotation/invoice."* (`NOT_VAT_REGISTERED_NOTICE`).
+
+**A customer's own VAT registration is completely independent of
+FortunIQ's.** `customers.vat_registered`/`customers.vat_number`
+(migration_v28) are display-only fields shown in the snapshot's
+`customer` block — `evaluateVatApplicability()` never reads them, and no
+code path lets a customer's VAT status influence whether VAT is charged.
+Covered explicitly in `finance-core.test.ts` ("captures customer VAT
+status independently of FortunIQ's own VAT status").
+
+**Document numbers are allocated at Approval, not at Draft creation.**
+`quotations.quotation_number` is nullable; Draft and Pending Approval
+quotations show as "Draft (unnumbered)" in the UI and are identified
+only by their database id. `approveQuotation()` is the single place
+`next_finance_number('quotation:<year>')` is ever called for a
+quotation. Because the underlying sequence only ever increments, a
+cancelled/voided quotation's number (once it has one) is never reused —
+the row and its audit trail are simply retained with that permanent
+number.
+
+**Issued-document snapshots.** The moment a quotation is Approved,
+`buildDocumentSnapshot()` captures customer identity/address/contact/VAT
+number, FortunIQ's own company + banking details (`company-info.ts`),
+FortunIQ's VAT status for that document, every line item, totals, terms,
+notes and a `templateVersion` tag — into `quotations.snapshot` (jsonb),
+which is never overwritten again. Phase 4 (PDF generation) must render
+an Approved/Sent/etc. quotation from this snapshot, never from live
+Customer/Settings tables, so a later edit to a customer's address can
+never alter a previously issued document.
+
+**Customer ownership is enforced server-side, at three layers**, not
+just hidden in the UI: (1) `getAuthorizedCustomerOptions()` never
+returns an unauthorised customer to the client in the first place; (2)
+`createQuotationDraft`/`updateQuotationDraft` re-check
+`canAccessCustomerForQuotation()` against whatever `customerId` actually
+arrives in the form, independent of what the picker showed; (3)
+`getQuotations`/`getQuotationDetail` scope reads the same way (Sales
+sees only quotations they created; Finance/Management/Super Admin see
+everything). An unassigned customer (`account_owner_email` is null) is
+open to any Sales user until a Super Admin/Finance/Management person
+assigns it via the new "Account Owner" field on the Customer form.
+
+**Lifecycle implemented:** Draft → Pending Approval → Approved → Sent,
+plus Revised (superseded by a new revision) and the schema-level outcome
+states Accepted/Declined/Expired/Cancelled/Converted for later phases.
+Draft/Pending Approval are freely editable in place; anything Approved+
+requires `reviseQuotation()`, which creates a fresh Draft copy (new
+`revision_number`, `parent_quotation_id` always pointing at the
+original) and marks the source row `Revised` — the original's number
+and snapshot are untouched forever.
+
+**A pre-existing bug fixed along the way, in the files touched this
+phase:** `requirePermissionAction()` calls Next's `redirect()` on access
+denial, which works by throwing a special `NEXT_REDIRECT`-digest error.
+Every server action in this app wraps its body in `try { } catch (err) {
+return { error: ... } }` (to avoid Next's production error-message
+redaction — see the app-wide convention). Without care, that generic
+catch also swallows the redirect error and shows a confusing message
+instead of actually redirecting to `/access-denied`. Added
+`isNextRedirectError()` (`src/lib/rbac.ts`) and used it as the first
+line of every catch block in `customer-actions.ts` and
+`quotation-actions.ts`. **This same latent issue likely exists in older
+action files** (`document-actions.ts`, `tender-actions.ts`, etc.) that
+predate this fix — worth a follow-up sweep, not done here to keep this
+phase's diff focused.
+
+**Operational note on Sales access:** `Sales/Marketing`'s role defaults
+(`ROLE_DEFAULT_MODULES`) do not include the `finance` module, so a Sales
+user needs to be explicitly granted `finance` module access (Team
+Management) before they can reach Quotations at all — and, because
+granular RBAC only takes effect once configured per person, an admin
+should also explicitly set that Sales user's `finance` actions to
+`Create`/`View` only (not `Approve`), otherwise they'll fall back to the
+coarse module gate and be able to approve their own quotations.
 
 ## Key architectural decisions
 
@@ -110,23 +207,31 @@ and `customers` were already first-class module keys with role defaults
 (Finance role: full finance access; Sales/Marketing role: customers +
 sales) before this module existed.
 
-## Known limitations (honest, as of Phase 1)
+## Known limitations (honest, as of Phase 2)
 
-- Quotations/Invoices UI, PDF generation, SharePoint storage, and
-  payment recording are **not yet built** — Phase 1 only lays the schema
-  and upgrades the Customers page to create/edit real customer records
-  with a stable customer code, which Quotations/Invoices will reference.
-- The "Sales: draft-only for their own customers" restriction from the
-  brief needs an ownership-scoping check beyond what the generic
-  `View/Create/Edit/Delete/Approve/Export/Manage` RBAC actions express on
-  their own (similar to how `documents.employee_id` ownership is checked
-  before classification elsewhere in this app) — this will be added
-  alongside the Quotations server actions in Phase 2, not deferred
-  silently.
+- Invoices UI, PDF generation, SharePoint document storage, and payment
+  recording are **not yet built** (Phases 4–8). Quotations are fully
+  functional end-to-end (create → submit → approve → send → revise);
+  Invoices will reuse the same schema, patterns and `finance-core.ts`
+  functions already in place.
+- Quotation approval/decline/expiry OUTCOMES (Accepted/Declined/Expired)
+  exist in the schema's status list but have no UI action yet — Phase 2
+  only wires the create→approve→send workflow explicitly asked for; a
+  customer's actual accept/decline response is not yet capturable.
 - No branding logo image file is on hand yet for PDF generation (Phase
   4) — only textual brand facts (colours, registration numbers,
-  tagline). PDFs can be built with accurate text/colour branding now; the
-  actual logo graphic slots in once supplied.
+  tagline), now centralised in `src/lib/company-info.ts`. PDFs can be
+  built with accurate text/colour branding now; the actual logo graphic
+  slots in once supplied.
 - Full banking account number/branch code are not on file (only bank
-  name/account type/holder name) — needed before invoices can display
-  complete banking details.
+  name/account type/holder name, in `company-info.ts`) — needed before
+  quotations/invoices can display complete banking details.
+- There is no admin UI yet to flip `finance_vat_registered` on, enter a
+  VAT registration number/effective date, or set customer account
+  owners in bulk — the backend (`finance-settings.ts`,
+  `updateFinanceVatSettings()`) and the Customer form's new "Account
+  Owner" field support this today; a dedicated Finance Settings screen
+  is future work.
+- `isNextRedirectError()` was added and used in this phase's new files
+  only (see above) — older action files elsewhere in the app likely
+  share the same latent bug and haven't been swept.

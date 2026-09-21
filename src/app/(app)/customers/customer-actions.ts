@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
-import { requirePermissionAction } from "@/lib/rbac";
+import { requirePermissionAction, isNextRedirectError } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { formatCustomerCode } from "@/lib/finance-core";
 
@@ -26,6 +26,7 @@ export async function addCustomer(formData: FormData): Promise<{ error?: string 
     const email = String(formData.get("email") ?? "").trim() || null;
     const phone = String(formData.get("phone") ?? "").trim() || null;
     const billingAddress = String(formData.get("billingAddress") ?? "").trim() || null;
+    const accountOwnerEmail = String(formData.get("accountOwnerEmail") ?? "").trim().toLowerCase() || null;
     const notes = String(formData.get("notes") ?? "").trim() || null;
     const status = String(formData.get("status") ?? "Active").trim() || "Active";
     const accountValueRaw = String(formData.get("accountValue") ?? "0").replace(/[^0-9.-]/g, "");
@@ -50,7 +51,7 @@ export async function addCustomer(formData: FormData): Promise<{ error?: string 
         customer_code: customerCode,
         name, industry, contact, email, phone,
         billing_address: billingAddress, notes, status,
-        account_value: accountValue,
+        account_value: accountValue, account_owner_email: accountOwnerEmail,
       })
       .select("id")
       .single();
@@ -72,6 +73,7 @@ export async function addCustomer(formData: FormData): Promise<{ error?: string 
     revalidatePath("/customers");
     return {};
   } catch (err) {
+    if (isNextRedirectError(err)) throw err;
     return { error: err instanceof Error ? err.message : "Couldn't create this customer." };
   }
 }
@@ -92,6 +94,7 @@ export async function updateCustomer(formData: FormData): Promise<{ error?: stri
     const email = String(formData.get("email") ?? "").trim() || null;
     const phone = String(formData.get("phone") ?? "").trim() || null;
     const billingAddress = String(formData.get("billingAddress") ?? "").trim() || null;
+    const accountOwnerEmail = String(formData.get("accountOwnerEmail") ?? "").trim().toLowerCase() || null;
     const notes = String(formData.get("notes") ?? "").trim() || null;
     const status = String(formData.get("status") ?? "Active").trim() || "Active";
     const accountValueRaw = String(formData.get("accountValue") ?? "0").replace(/[^0-9.-]/g, "");
@@ -105,7 +108,7 @@ export async function updateCustomer(formData: FormData): Promise<{ error?: stri
       .update({
         name, industry, contact, email, phone,
         billing_address: billingAddress, notes, status,
-        account_value: accountValue,
+        account_value: accountValue, account_owner_email: accountOwnerEmail,
       })
       .eq("id", id);
 
@@ -126,6 +129,7 @@ export async function updateCustomer(formData: FormData): Promise<{ error?: stri
     revalidatePath("/customers");
     return {};
   } catch (err) {
+    if (isNextRedirectError(err)) throw err;
     return { error: err instanceof Error ? err.message : "Couldn't update this customer." };
   }
 }

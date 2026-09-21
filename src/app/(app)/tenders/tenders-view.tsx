@@ -41,7 +41,7 @@ type ChecklistItem = { item: string; done: boolean };
 const TENDER_BOX_URL =
   "https://iqfuels.sharepoint.com/:f:/s/FortunIQDocuments/IgBnsyJtiKwQTIqoz7J5F-u3ASuq5RRrYVK1mu13szDkpeA?e=h5XHOL";
 
-export function TendersView({ tenders, checklist, canManage, workflowCounts, teamAssignments, showTeamAssignments, closingSoonWarningDays, canManageSettings }: {
+export function TendersView({ tenders, checklist, canManage, workflowCounts, teamAssignments, showTeamAssignments, closingSoonWarningDays, canManageSettings, outstandingChecklist }: {
   tenders: Tender[]; checklist: ChecklistItem[]; canManage: boolean;
   workflowCounts: {
     drafting: number; pricing: number; awaitingAssessment: number; submissionReady: number; dueThisWeek: number; overdueTasks: number;
@@ -51,6 +51,8 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
   showTeamAssignments: boolean;
   closingSoonWarningDays: number;
   canManageSettings: boolean;
+  /** tenderId -> first incomplete checklist item text, one lookup for the whole register (see getFirstOutstandingChecklistItemByTender in data.ts). Used by PriorityQueueWidget's "Missing" signal. */
+  outstandingChecklist: Record<string, string>;
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTender, setEditingTender] = useState<Tender | null>(null);
@@ -147,14 +149,11 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
     : `Missed (${visibleTenders.length})`;
 
   // Priority Queue needs each tender's first incomplete checklist item —
-  // the checklist prop here is a single tender's items today (see the
-  // Submission Checklist sidebar card, unchanged from before), not
-  // per-tender, so this map is deliberately empty until checklist data
-  // is fetched per-tender for the whole register — PriorityQueueWidget
-  // falls back to compliance% (already per-tender) for its "Missing"
-  // signal when this map has no entry. See docs/TENDER_DASHBOARD.md,
-  // "Known limitations."
-  const outstandingChecklistByTender: Record<string, string> = {};
+  // fetched once for the whole register by getFirstOutstandingChecklistItemByTender()
+  // (see data.ts) and passed down as the outstandingChecklist prop.
+  // PriorityQueueWidget falls back to compliance% (already per-tender)
+  // for its "Missing" signal when a given tender has no entry here.
+  const outstandingChecklistByTender: Record<string, string> = outstandingChecklist;
 
   const columns: Column<Tender>[] = [
     {

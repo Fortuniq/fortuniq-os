@@ -128,21 +128,164 @@ export function documentHeading(kind: "quotation" | "invoice"): "QUOTATION" | "I
 
 // ---------- Revision control ----------
 
-export type QuotationStatus = "Draft" | "Issued" | "Revised" | "Accepted" | "Declined" | "Expired" | "Converted";
+export type QuotationStatus =
+  | "Draft" | "Pending Approval" | "Approved" | "Sent"
+  | "Accepted" | "Declined" | "Expired" | "Revised" | "Cancelled" | "Converted";
 export type InvoiceStatus = "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue" | "Cancelled";
 
 /**
- * An issued document (anything other than Draft) must never be edited
- * in place — editing it means creating a revision instead. Only a Draft
- * may still be freely edited.
+ * Pre-issue statuses may still use LIVE Customer/Company data and have
+ * no document number yet. Once a quotation leaves this set (Approved
+ * onward), a number is burned and an immutable snapshot is taken — see
+ * buildDocumentSnapshot() below.
+ */
+const PRE_ISSUE_QUOTATION_STATUSES: QuotationStatus[] = ["Draft", "Pending Approval"];
+
+export function isPreIssueQuotationStatus(status: QuotationStatus): boolean {
+  return PRE_ISSUE_QUOTATION_STATUSES.includes(status);
+}
+
+/**
+ * An issued document (anything past Pending Approval) must never be
+ * edited in place — editing it means creating a revision instead. Only
+ * Draft/Pending Approval may still be freely edited, since nothing has
+ * been sent to the customer yet and no number/snapshot exists.
  */
 export function requiresRevisionToEdit(status: QuotationStatus | InvoiceStatus): boolean {
-  return status !== "Draft";
+  if (status === "Draft") return false;
+  if (status === "Pending Approval") return false;
+  return true;
 }
 
 /** The status the original row moves to once a revision is created from it. */
 export function statusAfterRevised(): QuotationStatus {
   return "Revised";
+}
+
+// ---------- VAT hard block ----------
+
+export interface VatSettingsSnapshot {
+  companyVatRegistered: boolean;
+  vatRegistrationNumber: string | null;
+  vatEffectiveDate: string | null; // ISO date
+  vatRate: number;
+}
+
+export interface VatApplicabilityRequest {
+  settings: VatSettingsSnapshot;
+  transactionDate: string;          // ISO date — the document's issue date
+  requesterIsAdmin: boolean;
+  requesterRole: string | null;     // RoleKey, kept as string here to avoid a cross-module type dependency in this zero-dependency file
+}
+
+export interface VatApplicabilityResult {
+  allowed: boolean;
+  reason?: string;
+  vatRate: number; // the rate to use if allowed; 0 if not allowed
+}
+
+/**
+ * THE VAT HARD BLOCK. This is the single, backend-enforced gate that
+ * decides whether a document is even PERMITTED to carry VAT — it is
+ * never enough for a caller to simply pass vatApplied:false; this
+ * function is the only place allowed to say "true", and only when
+ * every one of the following holds:
+ *
+ *   1. FortunIQ Fuels' own Finance Settings show VAT Registered = true
+ *      (a CUSTOMER's own vat_registered/vat_number are irrelevant here
+ *      — see docs/FINANCE_MODULE.md's VAT independence note).
+ *   2. A non-blank VAT Registration Number is on file.
+ *   3. A VAT effective date is on file.
+ *   4. The document's transaction date falls on/after that effective
+ *      date (a document dated before FortunIQ's VAT liability began
+ *      must never carry VAT even after registration happens).
+ *   5. The requesting user is Super Admin or holds the Finance role.
+ *
+ * Every server action that could possibly apply VAT MUST call this and
+ * use its result — never trust a client-supplied vatApplied flag.
+ */
+export function evaluateVatApplicability(req: VatApplicabilityRequest): VatApplicabilityResult {
+  const { settings, transactionDate, requesterIsAdmin, requesterRole } = req;
+
+  if (!settings.companyVatRegistered) {
+    return { allowed: false, reason: "FortunIQ Fuels is not currently registered as a VAT vendor.", vatRate: 0 };
+  }
+  if (!settings.vatRegistrationNumber || !settings.vatRegistrationNumber.trim()) {
+    return { allowed: false, reason: "No VAT Registration Number is on file in Finance Settings.", vatRate: 0 };
+  }
+  if (!settings.vatEffectiveDate) {
+    return { allowed: false, reason: "No VAT effective date is on file in Finance Settings.", vatRate: 0 };
+  }
+  if (!transactionDate || transactionDate < settings.vatEffectiveDate) {
+    return { allowed: false, reason: "This document's date falls before FortunIQ Fuels' VAT effective date.", vatRate: 0 };
+  }
+  if (!requesterIsAdmin && requesterRole !== "Finance") {
+    return { allowed: false, reason: "Only Finance or Super Admin may issue a VAT-inclusive document.", vatRate: 0 };
+  }
+
+  return { allowed: true, vatRate: settings.vatRate };
+}
+
+export const NOT_VAT_REGISTERED_NOTICE =
+  "FortunIQ Fuels (Pty) Ltd is currently not registered as a Value-Added Tax (VAT) vendor. Accordingly, no VAT has been charged or included in this quotation/invoice.";
+
+// ---------- Customer ownership scoping (Sales: own customers only) ----------
+
+export interface CustomerOwnershipCheck {
+  requesterIsAdmin: boolean;
+  requesterRole: string | null;
+  requesterEmail: string | null;
+  customerAccountOwnerEmail: string | null;
+}
+
+/**
+ * Server-side enforcement (never UI-only) of: Sales users may only
+ * create/view draft quotations for customers they're authorised to
+ * access. Finance, Management and Super Admin always pass — their
+ * broader access comes from the existing RBAC role model, not from
+ * account ownership.
+ */
+export function canAccessCustomerForQuotation(check: CustomerOwnershipCheck): boolean {
+  const { requesterIsAdmin, requesterRole, requesterEmail, customerAccountOwnerEmail } = check;
+  if (requesterIsAdmin) return true;
+  if (requesterRole === "Finance" || requesterRole === "Management") return true;
+  if (!customerAccountOwnerEmail) return true; // unassigned account — open to any Sales user until claimed
+  return (requesterEmail ?? "").toLowerCase() === customerAccountOwnerEmail.toLowerCase();
+}
+
+// ---------- Issued-document snapshots ----------
+
+export interface DocumentSnapshotInput {
+  customer: {
+    name: string;
+    customerCode?: string | null;
+    billingAddress?: string | null;
+    contact?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    vatRegistered: boolean;
+    vatNumber?: string | null;
+  };
+  company: Record<string, unknown>; // FortunIQ legal/registration/banking/brand facts, passed through as-is
+  vat: { applied: boolean; rate: number; amount: number; registrationNumber?: string | null };
+  lineItems: FinanceLineItemComputed[];
+  totals: FinanceDocumentTotals;
+  terms?: string | null;
+  notes?: string | null;
+  nonVatNotice?: string | null;
+  templateVersion: string;
+}
+
+/**
+ * Builds the immutable snapshot persisted to quotations.snapshot /
+ * invoices.snapshot at the moment a document is Approved. Deliberately
+ * a pure function of its inputs — the caller is responsible for
+ * fetching the CURRENT customer/company/settings data and passing it in
+ * ONCE, at approval time; this function does not fetch anything itself,
+ * so there is no risk of it silently re-reading live data later.
+ */
+export function buildDocumentSnapshot(input: DocumentSnapshotInput): DocumentSnapshotInput & { snapshotTakenAt: string } {
+  return { ...input, snapshotTakenAt: new Date().toISOString() };
 }
 
 // ---------- Payments / outstanding balance ----------

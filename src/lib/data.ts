@@ -818,6 +818,7 @@ export async function getCustomers() {
       phone: c.phone ?? null,
       billingAddress: c.billing_address ?? null,
       notes: c.notes ?? null,
+      accountOwnerEmail: c.account_owner_email ?? null,
     }));
   } catch {
     return mock.customers;

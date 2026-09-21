@@ -15,6 +15,7 @@ export type CustomerFormValue = {
   notes?: string | null;
   status?: string | null;
   accountValue?: number | null;
+  accountOwnerEmail?: string | null;
 };
 
 const STATUSES = ["Active", "Prospect", "Inactive"];
@@ -88,6 +89,12 @@ export function CustomerModal({ customer, onClose }: { customer?: CustomerFormVa
           <div>
             <label className="text-xs font-medium text-grey block mb-1">Billing Address</label>
             <textarea name="billingAddress" rows={2} defaultValue={customer?.billingAddress ?? ""} className="w-full text-sm px-3 py-2 rounded-lg border border-border" />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-grey block mb-1">Account Owner (Sales rep email, optional)</label>
+            <input name="accountOwnerEmail" type="email" placeholder="Leave blank to keep this account open to any Sales user" defaultValue={customer?.accountOwnerEmail ?? ""} className="w-full text-sm px-3 py-2 rounded-lg border border-border" />
+            <p className="text-[11px] text-light-grey mt-1">Only the assigned Sales rep (plus Finance/Management/Super Admin) can draft quotations for this customer once set.</p>
           </div>
 
           <div>

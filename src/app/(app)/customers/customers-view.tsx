@@ -22,6 +22,7 @@ type Customer = {
   phone?: string | null;
   billingAddress?: string | null;
   notes?: string | null;
+  accountOwnerEmail?: string | null;
 };
 
 export function CustomersView({ customers, canEdit }: { customers: Customer[]; canEdit: boolean }) {
@@ -58,7 +59,7 @@ export function CustomersView({ customers, canEdit }: { customers: Customer[]; c
           align: "right" as const,
           render: (r: Customer) => (
             <button
-              onClick={() => setModalCustomer({ id: r.id, name: r.name, industry: r.industry, contact: r.contact, email: r.email, phone: r.phone, billingAddress: r.billingAddress, notes: r.notes, status: r.status, accountValue: r.accountValue })}
+              onClick={() => setModalCustomer({ id: r.id, name: r.name, industry: r.industry, contact: r.contact, email: r.email, phone: r.phone, billingAddress: r.billingAddress, notes: r.notes, status: r.status, accountValue: r.accountValue, accountOwnerEmail: r.accountOwnerEmail })}
               className="text-grey hover:text-navy p-1"
               aria-label={`Edit ${r.name}`}
             >

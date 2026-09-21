@@ -70,6 +70,23 @@ export async function requirePermissionAction(moduleKey: RbacModuleKey, action: 
 }
 
 /**
+ * requirePermissionAction() calls Next.js's redirect() when access is
+ * denied, which works by THROWING a special error (digest starting
+ * with "NEXT_REDIRECT") that Next intercepts further up the stack — it
+ * must be allowed to propagate untouched. A server action that wraps
+ * requirePermissionAction() in a generic try/catch and returns
+ * { error: err.message } (the pattern used throughout this app to avoid
+ * Next's production error-redaction — see docs/FINANCE_MODULE.md) would
+ * otherwise silently swallow that redirect and show a confusing error
+ * instead of actually sending the person to /access-denied. Call this
+ * first thing inside any such catch block and rethrow before doing
+ * anything else with the error.
+ */
+export function isNextRedirectError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "digest" in err && typeof (err as { digest?: unknown }).digest === "string" && (err as { digest: string }).digest.startsWith("NEXT_REDIRECT");
+}
+
+/**
  * Same logic as requirePermissionAction, but returns a boolean instead
  * of redirecting — for UI code that wants to conditionally show/hide a
  * button rather than block an entire page.
