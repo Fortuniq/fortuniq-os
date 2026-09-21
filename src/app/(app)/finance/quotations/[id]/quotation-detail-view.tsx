@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pencil, Send, CheckCircle2, FileEdit, Copy } from "lucide-react";
+import { Pencil, Send, CheckCircle2, FileEdit, Copy, Download } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -51,6 +51,14 @@ export function QuotationDetailView({
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
 
       <div className="flex flex-wrap gap-2 mb-6">
+        <a
+          href={`/api/finance/quotations/${quotation.id}/pdf`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-sm font-semibold text-navy bg-white border border-border px-3.5 py-2 rounded-lg hover:bg-surface"
+        >
+          <Download className="w-4 h-4" /> {isPreIssue ? "Preview PDF" : "Download PDF"}
+        </a>
         {isPreIssue && canEdit && (
           <Link href={`/finance/quotations/${quotation.id}/edit`} className="flex items-center gap-1.5 text-sm font-semibold text-navy bg-white border border-border px-3.5 py-2 rounded-lg hover:bg-surface">
             <Pencil className="w-4 h-4" /> Edit

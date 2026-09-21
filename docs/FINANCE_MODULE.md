@@ -12,7 +12,7 @@ phase ships. See `supabase/migration_v27_finance.sql` for the schema.
 | 1 | Finance schema + Customers integration | ✅ Done |
 | 2 | Quotations CRUD | ✅ Done |
 | 3 | Calculation Engine (Qty × Rate) | ✅ Done (`finance-core.ts`) — reused by Phase 2/5 |
-| 4 | Branded PDF quotation generation | Not started |
+| 4 | Branded PDF quotation generation | ✅ Done |
 | 5 | Invoices CRUD | Not started |
 | 6 | Quotation → Invoice conversion | Not started |
 | 7 | Payments & outstanding balances | Not started |
@@ -207,25 +207,79 @@ and `customers` were already first-class module keys with role defaults
 (Finance role: full finance access; Sales/Marketing role: customers +
 sales) before this module existed.
 
-## Known limitations (honest, as of Phase 2)
+## Phase 4: Branded PDF generation
 
-- Invoices UI, PDF generation, SharePoint document storage, and payment
-  recording are **not yet built** (Phases 4–8). Quotations are fully
-  functional end-to-end (create → submit → approve → send → revise);
-  Invoices will reuse the same schema, patterns and `finance-core.ts`
-  functions already in place.
+**One renderer, two callers, never two competing layouts.**
+`generateFinancePdf()` (`src/lib/finance-pdf.ts`) takes a
+`DocumentSnapshotInput` (the exact same shape `buildDocumentSnapshot()`
+produces) plus a small `isPreview` flag — it never fetches anything
+itself. `GET /api/finance/quotations/[id]/pdf`
+(`src/app/api/finance/quotations/[id]/pdf/route.ts`) is the only caller
+today, and it picks the input two ways:
+- **Approved/Sent/Accepted/etc.** — passes `quotations.snapshot`
+  straight through. The PDF can never drift from what was actually
+  approved, because nothing here re-reads Customer/Settings tables.
+- **Draft/Pending Approval** — no snapshot exists yet, so the route
+  builds an equivalent structure from current live data (same
+  `buildDocumentSnapshot()` call the approval action uses) and sets
+  `isPreview: true`, which adds a diagonal "DRAFT — NOT ISSUED"
+  watermark and skips the document number. This is a genuine preview,
+  never mistakable for the issued document.
+
+**Uses `pdfkit`, not a headless browser.** Puppeteer/Playwright-style
+HTML-to-PDF rendering typically doesn't fit Netlify's serverless
+function size/cold-start constraints (a full Chromium binary). `pdfkit`
+is pure JS, so PDF generation runs as an ordinary serverless function
+with no extra runtime dependency.
+
+**What's on the PDF:** letterhead (trading name, tagline, brand orange
+accent bar — text/colour treatment, since no logo image file is on hand
+yet, see `company-info.ts`), registration/licence/tax reference numbers,
+registered address, contact details, the `QUOTATION`/`INVOICE` heading
+(never "Tax Invoice"/"VAT Invoice" — see `documentHeading()` in
+finance-core.ts), document number + status + issue date + revision,
+customer "Bill To" block (including the customer's OWN VAT number when
+they have one, clearly independent of whether VAT was actually charged
+on the document), the line-item table, subtotal/VAT/grand total, the
+exact required non-VAT notice when VAT wasn't applied, terms, notes, and
+whatever banking detail lines are actually on file (never a fabricated
+account number/branch code — `company-info.ts`'s `accountNumber`/
+`branchCode` are `null` today, so those lines are simply omitted).
+
+**Access control is the same as the detail page, not a second check.**
+The route calls `getQuotationDetail()` — the identical function the
+`/finance/quotations/[id]` page uses — so a Sales user can only ever
+download a PDF for a quotation they created, and a disallowed id 404s
+exactly like a nonexistent one (no probing signal).
+
+## Known limitations (honest, as of Phase 4)
+
+- Invoices UI, SharePoint document storage (saving the generated PDF
+  into `Finance/Quotations/{year}`), and payment recording are **not yet
+  built** (Phases 5–8). Quotations are fully functional end-to-end,
+  including PDF (create → submit → approve → send → revise → download);
+  Invoices will reuse the same schema, patterns, `finance-core.ts` and
+  `finance-pdf.ts` already in place.
 - Quotation approval/decline/expiry OUTCOMES (Accepted/Declined/Expired)
   exist in the schema's status list but have no UI action yet — Phase 2
   only wires the create→approve→send workflow explicitly asked for; a
   customer's actual accept/decline response is not yet capturable.
-- No branding logo image file is on hand yet for PDF generation (Phase
-  4) — only textual brand facts (colours, registration numbers,
-  tagline), now centralised in `src/lib/company-info.ts`. PDFs can be
-  built with accurate text/colour branding now; the actual logo graphic
-  slots in once supplied.
+- No branding logo IMAGE file is on hand yet — only textual brand facts
+  (colours, registration numbers, tagline), centralised in
+  `src/lib/company-info.ts`. The PDF ships with an accurate text/colour
+  letterhead treatment (a coloured accent bar + trading name/tagline in
+  brand fonts-equivalent) rather than a placeholder box; once a logo
+  image is supplied, `finance-pdf.ts` can embed it with `doc.image(...)`.
 - Full banking account number/branch code are not on file (only bank
-  name/account type/holder name, in `company-info.ts`) — needed before
-  quotations/invoices can display complete banking details.
+  name/account type/holder name, in `company-info.ts`) — those two lines
+  are simply omitted from the PDF today rather than shown blank or
+  fabricated; they'll appear automatically once added to
+  `company-info.ts`.
+- **`pdfkit` and `@types/pdfkit` were added to `package.json` but are
+  not yet installed in this sandbox** (no network access to npm here) —
+  run `npm install` locally before building/testing; this is the same
+  "please build locally before deploying" caveat as always, now also
+  covering this new dependency specifically.
 - There is no admin UI yet to flip `finance_vat_registered` on, enter a
   VAT registration number/effective date, or set customer account
   owners in bulk — the backend (`finance-settings.ts`,
