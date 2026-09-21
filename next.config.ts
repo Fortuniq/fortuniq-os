@@ -4,6 +4,21 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // pdfkit (Finance module PDF generation, src/lib/finance-pdf.ts) pulls
+  // in fontkit, whose prebuilt dist/module.mjs imports a decorator
+  // helper (`applyDecoratedDescriptor`) from `@swc/helpers` under a name
+  // that this project's resolved @swc/helpers version no longer exports
+  // (it now ships as `_apply_decorated_descriptor`). That mismatch only
+  // surfaces because Turbopack/webpack tries to bundle fontkit's ESM
+  // file through this app's module graph — a route handler running in
+  // the Node.js runtime doesn't need it bundled at all; it can just
+  // `require()` it natively at runtime, where the mismatch never
+  // triggers. Listing both packages here (the stable, non-experimental
+  // key as of Next.js 15+) tells Next to leave them external to the
+  // server bundle instead of pulling them through Turbopack/webpack.
+  // Only affects server-side route handlers/Server Components — this
+  // app never imports pdfkit from client components.
+  serverExternalPackages: ["pdfkit", "fontkit"],
   experimental: {
     serverActions: {
       // Next.js's own default Server Action body limit is 1MB — far

@@ -232,6 +232,22 @@ function size/cold-start constraints (a full Chromium binary). `pdfkit`
 is pure JS, so PDF generation runs as an ordinary serverless function
 with no extra runtime dependency.
 
+**Turbopack build note.** `pdfkit`'s font-handling dependency
+`fontkit` ships a prebuilt `dist/module.mjs` that imports a decorator
+helper from `@swc/helpers` under a name (`applyDecoratedDescriptor`)
+this project's resolved `@swc/helpers` no longer exports (it's now
+`_apply_decorated_descriptor`), which surfaced as a Turbopack build
+failure the first time this route was built. It's a bundling-only
+issue — `finance-pdf.ts` only ever runs server-side, in the Node.js
+runtime, so it never needs to be bundled at all. `next.config.ts` lists
+`pdfkit`/`fontkit` under `serverExternalPackages`, which tells Next to
+leave them external and `require()` them natively at runtime instead of
+pulling them through Turbopack/webpack — the mismatch never triggers
+because the file is never bundled. If a future dependency bump changes
+this, the fallback options are pinning `@swc/helpers` via a
+`package.json` "overrides" entry, or swapping `pdfkit` for a lighter PDF
+library that doesn't pull in `fontkit`.
+
 **What's on the PDF:** letterhead (trading name, tagline, brand orange
 accent bar — text/colour treatment, since no logo image file is on hand
 yet, see `company-info.ts`), registration/licence/tax reference numbers,
