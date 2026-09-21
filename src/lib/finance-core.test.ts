@@ -4,7 +4,7 @@ import {
   calculateDocumentTotals, formatDocumentNumber, sequenceKeyFor, documentHeading,
   requiresRevisionToEdit, statusAfterRevised, calculateOutstandingBalance,
   derivePaymentStatus, formatCustomerCode, validateLineItems, DEFAULT_NON_VAT_NOTICE,
-  isPreIssueQuotationStatus, evaluateVatApplicability, NOT_VAT_REGISTERED_NOTICE,
+  isPreIssueQuotationStatus, isPreIssueInvoiceStatus, evaluateVatApplicability, NOT_VAT_REGISTERED_NOTICE,
   canAccessCustomerForQuotation, buildDocumentSnapshot,
 } from "./finance-core";
 
@@ -107,6 +107,14 @@ describe("revision control", () => {
   });
   it("marks the original Revised once superseded", () => {
     expect(statusAfterRevised()).toBe("Revised");
+  });
+  it("an invoice is pre-issue only while Draft (no separate approval step)", () => {
+    expect(isPreIssueInvoiceStatus("Draft")).toBe(true);
+    expect(isPreIssueInvoiceStatus("Sent")).toBe(false);
+    expect(isPreIssueInvoiceStatus("Paid")).toBe(false);
+    expect(isPreIssueInvoiceStatus("Partially Paid")).toBe(false);
+    expect(isPreIssueInvoiceStatus("Overdue")).toBe(false);
+    expect(isPreIssueInvoiceStatus("Cancelled")).toBe(false);
   });
 });
 

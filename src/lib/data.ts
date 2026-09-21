@@ -744,7 +744,12 @@ export async function getInvoices() {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("invoices").select("*").order("due_date");
     if (error || !data || data.length === 0) return mock.invoices;
-    return data.map((i) => ({ id: i.invoice_number, customer: i.customer, amount: Number(i.amount), status: i.status, due: i.due_date }));
+    // A Draft invoice from the Finance Module (Phase 5) has no
+    // invoice_number yet (see docs/FINANCE_MODULE.md — numbers are
+    // allocated at Issue, not at creation), so this dashboard widget
+    // falls back to a short id-based label rather than showing a blank
+    // row for it.
+    return data.map((i) => ({ id: i.invoice_number ?? `Draft-${String(i.id).slice(0, 8)}`, customer: i.customer, amount: Number(i.amount ?? i.total ?? 0), status: i.status, due: i.due_date }));
   } catch {
     return mock.invoices;
   }

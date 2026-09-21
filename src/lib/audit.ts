@@ -41,6 +41,7 @@ export type AuditAction =
   | "quotation_cancelled"
   | "quotation_converted"
   | "invoice_created"
+  | "invoice_updated"
   | "invoice_issued"
   | "invoice_revised"
   | "invoice_cancelled"

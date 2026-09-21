@@ -13,7 +13,7 @@ phase ships. See `supabase/migration_v27_finance.sql` for the schema.
 | 2 | Quotations CRUD | ✅ Done |
 | 3 | Calculation Engine (Qty × Rate) | ✅ Done (`finance-core.ts`) — reused by Phase 2/5 |
 | 4 | Branded PDF quotation generation | ✅ Done |
-| 5 | Invoices CRUD | Not started |
+| 5 | Invoices CRUD | ✅ Done |
 | 6 | Quotation → Invoice conversion | Not started |
 | 7 | Payments & outstanding balances | Not started |
 | 8 | SharePoint storage + audit trail | Partial — audit logging for every quotation lifecycle event is done (see below); SharePoint document storage is still Phase 8/4 |
@@ -268,14 +268,85 @@ The route calls `getQuotationDetail()` — the identical function the
 download a PDF for a quotation they created, and a disallowed id 404s
 exactly like a nonexistent one (no probing signal).
 
-## Known limitations (honest, as of Phase 4)
+## Phase 5: Invoices CRUD
 
-- Invoices UI, SharePoint document storage (saving the generated PDF
-  into `Finance/Quotations/{year}`), and payment recording are **not yet
-  built** (Phases 5–8). Quotations are fully functional end-to-end,
-  including PDF (create → submit → approve → send → revise → download);
-  Invoices will reuse the same schema, patterns, `finance-core.ts` and
-  `finance-pdf.ts` already in place.
+**Same six hard controls as Quotations, reusing the same pure logic.**
+Invoices are built entirely on the `finance-core.ts` / `finance-pdf.ts`
+/ `finance-settings.ts` / `company-info.ts` infrastructure from Phases
+1–4 — no duplicated business logic, only a parallel data layer
+(`src/lib/invoices-data.ts`), server actions
+(`src/app/(app)/finance/invoices/invoice-actions.ts`), and UI
+(`src/app/(app)/finance/invoices/**`), plus a mirrored PDF route
+(`src/app/api/finance/invoices/[id]/pdf/route.ts`).
+
+**A simpler lifecycle than Quotations — no separate approval step.**
+`InvoiceStatus` (`finance-core.ts`) is `Draft | Sent | Paid | Partially
+Paid | Overdue | Cancelled` — there is no `Pending Approval`/`Approved`
+split. A Draft invoice uses live Customer/Company data, has no
+`INV-YYYY-XXXX` number, and is freely editable
+(`createInvoiceDraft`/`updateInvoiceDraft`). `issueInvoice()` is the one
+place a number is allocated and a snapshot is taken — it allocates the
+number via `next_finance_number('invoice:<year>')`, re-evaluates the VAT
+hard block using the issuer's own permissions (never trusting what was
+last previewed on the Draft), calls `buildDocumentSnapshot()`, and moves
+the row straight to `Sent` in a single action — matching how invoices
+actually work (there's no internal approval step to model; issuing
+*is* sending). `isPreIssueInvoiceStatus()` (`finance-core.ts`) is the
+Invoice equivalent of `isPreIssueQuotationStatus()` — true only for
+`Draft`.
+
+**No revision workflow for invoices, unlike quotations.** `Quotation
+Status` includes `Revised`; `InvoiceStatus` deliberately does not — a
+sent invoice isn't silently "revised" in the same way a negotiable
+quotation is; correcting an issued invoice is a credit-note/reissue
+business process, not a schema-level revision chain. The
+`revision_number`/`parent_invoice_id` columns already exist on
+`invoices` (migration_v27) for when that's built, but Phase 5 doesn't
+wire a `reviseInvoice()` action. `cancelInvoice()` is the only
+post-issue state change Phase 5 ships, and it deliberately refuses once
+`paid_amount > 0` — cancelling a paid invoice needs a credit note, not a
+silent status flip.
+
+**Customer ownership reuses `canAccessCustomerForQuotation()` as-is.**
+The function name still says "Quotation" (kept rather than renamed, to
+avoid an unrelated diff across Phase 2 files), but its behaviour is
+generic — Sales users can only bill customers they're authorised to
+access, exactly as with quotations — so `invoices-data.ts` and
+`invoice-actions.ts` call it directly rather than duplicating the rule.
+
+**PDF reuses `generateFinancePdf()` unchanged**, with `kind: "invoice"`
+and a new optional `dueDate` field (mirrors quotations' `validUntil` —
+printed in the heading block only when the document is an invoice). A
+Draft invoice's PDF is a watermarked live-data preview, exactly like a
+Draft/Pending Approval quotation's; a Sent+ invoice's PDF renders
+straight from its immutable `snapshot`.
+
+**Legacy Finance dashboard widget kept in sync, not replaced.** The
+existing `/finance` page's "Invoices" table (`src/lib/data.ts`'s
+`getInvoices()`, feeding the generic `FinanceView`) reads the same
+`invoices` table, so real invoices created here now appear there too —
+`invoice-actions.ts` keeps the legacy `customer`/`amount` columns in
+sync with `customer_id`/`total` on every write for exactly this reason.
+`getInvoices()` was given a one-line defensive fallback so a Draft
+invoice (no `invoice_number` yet) shows a short id-based label instead
+of a blank row in that widget. The real, full-featured invoices list
+lives at `/finance/invoices` (`InvoiceListRow`, `invoices-data.ts`) —
+deliberately a separate type/query from the legacy widget's simple
+`{id, customer, amount, status, due}` shape, not a shared one.
+
+## Known limitations (honest, as of Phase 5)
+
+- Quotation → Invoice conversion, SharePoint document storage (saving
+  generated PDFs into `Finance/Quotations/{year}` /
+  `Finance/Invoices/{year}`), and payment recording are **not yet built**
+  (Phases 6–8). Quotations and Invoices are each fully functional
+  end-to-end on their own (create → issue → download PDF), but nothing
+  yet links a quotation to the invoice it becomes, and an invoice's
+  `Paid`/`Partially Paid`/`Overdue` statuses can't yet be reached —
+  Phase 7 (payments) is what will actually move an invoice out of
+  `Sent`.
+- No revision workflow for invoices (see the Phase 5 section above) —
+  only `cancelInvoice()`, which refuses once anything has been paid.
 - Quotation approval/decline/expiry OUTCOMES (Accepted/Declined/Expired)
   exist in the schema's status list but have no UI action yet — Phase 2
   only wires the create→approve→send workflow explicitly asked for; a

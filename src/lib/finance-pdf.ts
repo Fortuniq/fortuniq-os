@@ -28,6 +28,7 @@ export interface FinancePdfOptions {
   revisionNumber: number;
   issueDate: string | null;
   validUntil?: string | null; // quotations only
+  dueDate?: string | null; // invoices only
   snapshot: DocumentSnapshotInput;
   isPreview: boolean; // true = Draft/Pending Approval, no official number/snapshot yet
 }
@@ -52,7 +53,7 @@ function fmtDate(iso: string | null | undefined): string {
 }
 
 export function generateFinancePdf(opts: FinancePdfOptions): Promise<Buffer> {
-  const { kind, documentNumber, status, revisionNumber, issueDate, validUntil, snapshot, isPreview } = opts;
+  const { kind, documentNumber, status, revisionNumber, issueDate, validUntil, dueDate, snapshot, isPreview } = opts;
   const company = snapshot.company as unknown as CompanyInfo;
 
   return new Promise((resolve, reject) => {
@@ -97,6 +98,7 @@ export function generateFinancePdf(opts: FinancePdfOptions): Promise<Buffer> {
     doc.text(`Status: ${status}`, { align: "right", width: pageWidth });
     doc.text(`Issue Date: ${fmtDate(issueDate)}`, { align: "right", width: pageWidth });
     if (kind === "quotation" && validUntil) doc.text(`Valid Until: ${fmtDate(validUntil)}`, { align: "right", width: pageWidth });
+    if (kind === "invoice" && dueDate) doc.text(`Due Date: ${fmtDate(dueDate)}`, { align: "right", width: pageWidth });
     doc.y = Math.max(letterheadBottomY, doc.y);
 
     if (isPreview) {

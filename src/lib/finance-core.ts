@@ -146,6 +146,18 @@ export function isPreIssueQuotationStatus(status: QuotationStatus): boolean {
 }
 
 /**
+ * An invoice has a simpler lifecycle than a quotation — there is no
+ * separate "Pending Approval" step (see InvoiceStatus above). Only
+ * Draft uses live Customer/Company data and has no INV-YYYY-XXXX number
+ * yet; issuing it (see issueInvoice() in invoice-actions.ts) allocates
+ * the number, takes the immutable snapshot, and moves it straight to
+ * Sent in one step.
+ */
+export function isPreIssueInvoiceStatus(status: InvoiceStatus): boolean {
+  return status === "Draft";
+}
+
+/**
  * An issued document (anything past Pending Approval) must never be
  * edited in place — editing it means creating a revision instead. Only
  * Draft/Pending Approval may still be freely edited, since nothing has
