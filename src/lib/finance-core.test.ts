@@ -97,9 +97,10 @@ describe("documentHeading", () => {
 });
 
 describe("revision control", () => {
-  it("only a Draft can be edited in place", () => {
+  it("only Draft or Pending Approval can be edited in place", () => {
     expect(requiresRevisionToEdit("Draft")).toBe(false);
-    expect(requiresRevisionToEdit("Issued")).toBe(true);
+    expect(requiresRevisionToEdit("Pending Approval")).toBe(false);
+    expect(requiresRevisionToEdit("Approved")).toBe(true);
     expect(requiresRevisionToEdit("Accepted")).toBe(true);
     expect(requiresRevisionToEdit("Sent")).toBe(true);
     expect(requiresRevisionToEdit("Paid")).toBe(true);
