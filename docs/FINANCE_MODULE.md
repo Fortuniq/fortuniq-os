@@ -14,7 +14,7 @@ phase ships. See `supabase/migration_v27_finance.sql` for the schema.
 | 3 | Calculation Engine (Qty × Rate) | ✅ Done (`finance-core.ts`) — reused by Phase 2/5 |
 | 4 | Branded PDF quotation generation | ✅ Done |
 | 5 | Invoices CRUD | ✅ Done |
-| 6 | Quotation → Invoice conversion | Not started |
+| 6 | Quotation → Invoice conversion | ✅ Done |
 | 7 | Payments & outstanding balances | Not started |
 | 8 | SharePoint storage + audit trail | Partial — audit logging for every quotation lifecycle event is done (see below); SharePoint document storage is still Phase 8/4 |
 
@@ -334,19 +334,65 @@ lives at `/finance/invoices` (`InvoiceListRow`, `invoices-data.ts`) —
 deliberately a separate type/query from the legacy widget's simple
 `{id, customer, amount, status, due}` shape, not a shared one.
 
-## Known limitations (honest, as of Phase 5)
+## Phase 6: Quotation → Invoice conversion
 
-- Quotation → Invoice conversion, SharePoint document storage (saving
-  generated PDFs into `Finance/Quotations/{year}` /
-  `Finance/Invoices/{year}`), and payment recording are **not yet built**
-  (Phases 6–8). Quotations and Invoices are each fully functional
-  end-to-end on their own (create → issue → download PDF), but nothing
-  yet links a quotation to the invoice it becomes, and an invoice's
+**One-way, one-time, and never trusts the quotation's own totals.**
+`convertQuotationToInvoice()` (`quotation-actions.ts`) creates a new
+Draft invoice from an issued quotation's line items — copying
+`product_service`/`description`/`quantity`/`unit`/`unit_price` verbatim,
+but always re-running them through `calculateDocumentTotals()` with a
+**freshly evaluated** VAT gate (today's date, the converting user's own
+permissions), never copying the quotation's stored `subtotal`/`vat_*`/
+`total` columns. The two documents can legitimately end up with
+different VAT treatment if Finance Settings changed in between — that's
+correct, not a bug, per the VAT hard block's own rule that every
+document's VAT status is decided independently at ITS OWN issue time
+(see `evaluateVatApplicability()`).
+
+**Eligibility is a pure function, `isConvertibleQuotationStatus()`**
+(`finance-core.ts`) — true only for `Approved`, `Sent`, `Accepted`.
+Blocked before issue (`Draft`/`Pending Approval` — nothing issued yet)
+and after `Declined`/`Expired`/`Cancelled`/`Revised`/`Converted`. A
+quotation can only ever be converted once: the action checks BOTH
+`isConvertibleQuotationStatus()` AND `quotations.converted_to_invoice_id
+IS NULL`, so a second attempt (even racing the first) is refused with a
+pointer to the invoice that already exists rather than creating a
+duplicate.
+
+**The link is bidirectional and permanent.** The quotation is marked
+`status = 'Converted'` with `converted_to_invoice_id` set (its own
+`quotation_number`/snapshot/history are untouched — Converted is just
+another terminal status, like Declined or Expired); the new invoice
+carries `quotation_id` pointing back. Both detail pages show a "View
+invoice" / "Converted from FQ-…" link using these — no separate join
+table, no denormalized copy of the quotation number onto the invoice
+beyond what the `quotations(quotation_number)` select already resolves
+at read time in `invoices-data.ts`.
+
+**If the invoice is created but the quotation's own status update
+fails** (a genuine two-write operation — Postgres doesn't give this app
+a cross-table transaction here), the action does NOT roll back the
+invoice: it's real, usable data at that point, and destroying it to
+"undo" a bookkeeping failure would be worse than a temporarily
+inconsistent status. The error message says exactly that, so it's never
+silently swallowed.
+
+## Known limitations (honest, as of Phase 6)
+
+- SharePoint document storage (saving generated PDFs into
+  `Finance/Quotations/{year}` / `Finance/Invoices/{year}`) and payment
+  recording are **not yet built** (Phases 7–8). An invoice's
   `Paid`/`Partially Paid`/`Overdue` statuses can't yet be reached —
   Phase 7 (payments) is what will actually move an invoice out of
   `Sent`.
 - No revision workflow for invoices (see the Phase 5 section above) —
   only `cancelInvoice()`, which refuses once anything has been paid.
+- Converting a quotation copies its line items and terms/notes, but NOT
+  its `valid_until` (quotations concept, doesn't apply to an invoice) —
+  the new Draft invoice's `due_date` is left blank for Finance to set
+  explicitly, since a quotation's validity window and an invoice's
+  payment terms are different business concepts that shouldn't be
+  silently conflated.
 - Quotation approval/decline/expiry OUTCOMES (Accepted/Declined/Expired)
   exist in the schema's status list but have no UI action yet — Phase 2
   only wires the create→approve→send workflow explicitly asked for; a

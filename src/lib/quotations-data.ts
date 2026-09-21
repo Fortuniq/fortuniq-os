@@ -89,6 +89,7 @@ export type QuotationDetail = {
   approvedByName: string | null;
   approvedAt: string | null;
   sentAt: string | null;
+  convertedToInvoiceId: string | null;
   snapshot: Record<string, unknown> | null;
   lineItems: QuotationLineItemRow[];
 };
@@ -142,6 +143,7 @@ export async function getQuotationDetail(id: string, permissions: UserPermission
       notes: data.notes, terms: data.terms, validUntil: data.valid_until, issueDate: data.issue_date,
       createdByName: data.created_by_name, createdByEmail: data.created_by_email,
       approvedByName: data.approved_by_name, approvedAt: data.approved_at, sentAt: data.sent_at,
+      convertedToInvoiceId: data.converted_to_invoice_id,
       snapshot: data.snapshot,
       lineItems,
     };

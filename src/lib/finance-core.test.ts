@@ -4,7 +4,8 @@ import {
   calculateDocumentTotals, formatDocumentNumber, sequenceKeyFor, documentHeading,
   requiresRevisionToEdit, statusAfterRevised, calculateOutstandingBalance,
   derivePaymentStatus, formatCustomerCode, validateLineItems, DEFAULT_NON_VAT_NOTICE,
-  isPreIssueQuotationStatus, isPreIssueInvoiceStatus, evaluateVatApplicability, NOT_VAT_REGISTERED_NOTICE,
+  isPreIssueQuotationStatus, isPreIssueInvoiceStatus, isConvertibleQuotationStatus,
+  evaluateVatApplicability, NOT_VAT_REGISTERED_NOTICE,
   canAccessCustomerForQuotation, buildDocumentSnapshot,
 } from "./finance-core";
 
@@ -115,6 +116,23 @@ describe("revision control", () => {
     expect(isPreIssueInvoiceStatus("Partially Paid")).toBe(false);
     expect(isPreIssueInvoiceStatus("Overdue")).toBe(false);
     expect(isPreIssueInvoiceStatus("Cancelled")).toBe(false);
+  });
+});
+
+describe("quotation -> invoice conversion eligibility", () => {
+  it("only an issued or accepted quotation can be converted", () => {
+    expect(isConvertibleQuotationStatus("Approved")).toBe(true);
+    expect(isConvertibleQuotationStatus("Sent")).toBe(true);
+    expect(isConvertibleQuotationStatus("Accepted")).toBe(true);
+  });
+  it("blocks conversion before issue, and after decline/expiry/cancellation/revision/re-conversion", () => {
+    expect(isConvertibleQuotationStatus("Draft")).toBe(false);
+    expect(isConvertibleQuotationStatus("Pending Approval")).toBe(false);
+    expect(isConvertibleQuotationStatus("Declined")).toBe(false);
+    expect(isConvertibleQuotationStatus("Expired")).toBe(false);
+    expect(isConvertibleQuotationStatus("Cancelled")).toBe(false);
+    expect(isConvertibleQuotationStatus("Revised")).toBe(false);
+    expect(isConvertibleQuotationStatus("Converted")).toBe(false);
   });
 });
 

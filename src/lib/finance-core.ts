@@ -174,6 +174,24 @@ export function statusAfterRevised(): QuotationStatus {
   return "Revised";
 }
 
+// ---------- Quotation → Invoice conversion ----------
+
+const CONVERTIBLE_QUOTATION_STATUSES: QuotationStatus[] = ["Approved", "Sent", "Accepted"];
+
+/**
+ * A quotation can become an invoice only once it has actually been
+ * issued to the customer (Approved/Sent) or the customer has formally
+ * accepted it — never while still Draft/Pending Approval (nothing
+ * issued yet to invoice against) and never once it's
+ * Declined/Expired/Cancelled/Revised/already Converted. See
+ * convertQuotationToInvoice() in quotation-actions.ts, which ALSO
+ * checks quotations.converted_to_invoice_id — the two checks together
+ * guarantee a quotation is only ever converted once, even under a race.
+ */
+export function isConvertibleQuotationStatus(status: QuotationStatus): boolean {
+  return CONVERTIBLE_QUOTATION_STATUSES.includes(status);
+}
+
 // ---------- VAT hard block ----------
 
 export interface VatSettingsSnapshot {

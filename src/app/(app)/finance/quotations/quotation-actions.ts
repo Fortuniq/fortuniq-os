@@ -9,7 +9,7 @@ import { COMPANY_INFO } from "@/lib/company-info";
 import {
   computeLineItems, calculateDocumentTotals, validateLineItems, evaluateVatApplicability,
   canAccessCustomerForQuotation, buildDocumentSnapshot, formatDocumentNumber, sequenceKeyFor,
-  isPreIssueQuotationStatus, NOT_VAT_REGISTERED_NOTICE, type FinanceLineItemInput,
+  isPreIssueQuotationStatus, isConvertibleQuotationStatus, NOT_VAT_REGISTERED_NOTICE, type FinanceLineItemInput,
 } from "@/lib/finance-core";
 
 /**
@@ -428,5 +428,124 @@ export async function reviseQuotation(id: string): Promise<{ error?: string; id?
   } catch (err) {
     if (isNextRedirectError(err)) throw err;
     return { error: err instanceof Error ? err.message : "Couldn't create a revision of this quotation." };
+  }
+}
+
+/**
+ * Converts an issued quotation into a new Draft invoice for the same
+ * customer, copying its line items and terms/notes across. The
+ * quotation is marked Converted and permanently linked via
+ * converted_to_invoice_id — checked here alongside
+ * isConvertibleQuotationStatus() so a quotation can only ever be
+ * converted once, even under a race between two concurrent requests.
+ *
+ * The new invoice starts as an ordinary Draft: its own VAT
+ * applicability, document number and snapshot are decided
+ * independently, later, when IT is issued (issueInvoice() in
+ * invoice-actions.ts) — never copied from the quotation, because VAT
+ * Settings or the issuer's own permissions could have changed in the
+ * time between the quotation being approved and the invoice being
+ * issued. Totals are always recomputed from the raw line items through
+ * finance-core.ts, never trusted verbatim from another document.
+ */
+export async function convertQuotationToInvoice(id: string): Promise<{ error?: string; invoiceId?: string }> {
+  try {
+    const permissions = await requirePermissionAction("finance", "Edit");
+    const supabase = createServiceClient();
+
+    const { data: quotation } = await supabase.from("quotations").select("*, quotation_line_items(*)").eq("id", id).maybeSingle();
+    if (!quotation) return { error: "That quotation could not be found." };
+    if (quotation.converted_to_invoice_id) {
+      return { error: "This quotation has already been converted to an invoice.", invoiceId: quotation.converted_to_invoice_id };
+    }
+    if (!isConvertibleQuotationStatus(quotation.status)) {
+      return { error: `A ${quotation.status} quotation can't be converted to an invoice. Only an issued quotation (Approved, Sent or Accepted) can be converted.` };
+    }
+
+    const customer = await fetchCustomerForOwnershipCheck(quotation.customer_id);
+    if (!customer) return { error: "The customer on this quotation could not be found." };
+    const canAccess = canAccessCustomerForQuotation({
+      requesterIsAdmin: permissions.isAdmin, requesterRole: permissions.role ?? null,
+      requesterEmail: permissions.email ?? null, customerAccountOwnerEmail: customer.account_owner_email ?? null,
+    });
+    if (!canAccess) return { error: "You are not authorised to invoice this customer." };
+
+    const lineItemInputs = (quotation.quotation_line_items ?? [])
+      .sort((a: { line_order: number }, b: { line_order: number }) => a.line_order - b.line_order)
+      .map((li: { product_service: string; description: string | null; quantity: string; unit: string | null; unit_price: string }) => ({
+        productService: li.product_service, description: li.description,
+        quantity: Number(li.quantity), unit: li.unit, unitPrice: Number(li.unit_price),
+      }));
+
+    // Fresh VAT gate evaluation for the NEW document — see doc comment above.
+    const vatSettings = await getFinanceVatSettings();
+    const today = new Date().toISOString().slice(0, 10);
+    const vatGate = evaluateVatApplicability({
+      settings: vatSettings, transactionDate: today,
+      requesterIsAdmin: permissions.isAdmin, requesterRole: permissions.role ?? null,
+    });
+    const totals = calculateDocumentTotals(lineItemInputs, { vatApplied: vatGate.allowed, vatRate: vatGate.vatRate });
+    const computedLines = computeLineItems(lineItemInputs);
+
+    const { data: insertedInvoice, error: invoiceError } = await supabase.from("invoices").insert({
+      customer_id: quotation.customer_id,
+      customer: customer.name, // legacy free-text column, kept in sync — see docs/FINANCE_MODULE.md, Phase 5
+      quotation_id: quotation.id,
+      status: "Draft",
+      subtotal: totals.subtotal, vat_applied: totals.vatApplied, vat_rate: totals.vatRate,
+      vat_amount: totals.vatAmount, total: totals.total, amount: totals.total,
+      notes: quotation.notes, terms: quotation.terms,
+      created_by_name: permissions.name ?? null,
+      created_by_email: (permissions.email ?? "unknown").toLowerCase(),
+    }).select("id").single();
+    if (invoiceError || !insertedInvoice) {
+      console.error("Failed to create invoice from quotation:", invoiceError);
+      return { error: "Couldn't create an invoice from this quotation. Please try again." };
+    }
+
+    const lineRows = computedLines.map((line, index) => ({
+      invoice_id: insertedInvoice.id, line_order: index, product_service: line.productService,
+      description: line.description, quantity: line.quantity, unit: line.unit,
+      unit_price: line.unitPrice, line_total: line.lineTotal,
+    }));
+    const { error: lineError } = await supabase.from("invoice_line_items").insert(lineRows);
+    if (lineError) {
+      console.error("Failed to save line items for converted invoice, rolling back:", lineError);
+      await supabase.from("invoices").delete().eq("id", insertedInvoice.id);
+      return { error: "Couldn't save the line items for the new invoice. Please try again." };
+    }
+
+    const { error: quotationUpdateError } = await supabase.from("quotations").update({
+      status: "Converted",
+      converted_to_invoice_id: insertedInvoice.id,
+    }).eq("id", id);
+    if (quotationUpdateError) {
+      console.error("Failed to mark quotation as converted (the invoice was still created successfully):", quotationUpdateError);
+      // Deliberately NOT rolled back — the invoice is real, usable data
+      // at this point; only the quotation's own bookkeeping failed.
+      // Surface this clearly rather than silently losing the link.
+      return { error: "The invoice was created, but the quotation couldn't be marked as converted. Please refresh and check both records.", invoiceId: insertedInvoice.id };
+    }
+
+    await logAudit({
+      actorEmail: permissions.email ?? "unknown", actorName: permissions.name,
+      action: "quotation_converted", targetType: "quotation", targetId: id,
+      targetLabel: quotation.quotation_number ?? undefined,
+      metadata: { invoiceId: insertedInvoice.id },
+    });
+    await logAudit({
+      actorEmail: permissions.email ?? "unknown", actorName: permissions.name,
+      action: "invoice_created", targetType: "invoice", targetId: insertedInvoice.id,
+      targetLabel: `Converted from ${quotation.quotation_number ?? "quotation"}`,
+      metadata: { quotationId: id, total: totals.total },
+    });
+
+    revalidatePath(`/finance/quotations/${id}`);
+    revalidatePath("/finance/quotations");
+    revalidatePath("/finance/invoices");
+    return { invoiceId: insertedInvoice.id };
+  } catch (err) {
+    if (isNextRedirectError(err)) throw err;
+    return { error: err instanceof Error ? err.message : "Couldn't convert this quotation to an invoice." };
   }
 }

@@ -153,6 +153,13 @@ export function InvoiceDetailView({
               <SummaryRow label="Issue Date" value={invoice.issueDate ? formatDate(invoice.issueDate) : "Not yet issued"} />
               <SummaryRow label="Due Date" value={invoice.dueDate ? formatDate(invoice.dueDate) : "—"} />
               {invoice.approvedByName && <SummaryRow label="Issued By" value={invoice.approvedByName} />}
+              {invoice.quotationId && (
+                <div className="pt-2 border-t border-border">
+                  <Link href={`/finance/quotations/${invoice.quotationId}`} className="text-xs text-navy hover:underline">
+                    Converted from {invoice.quotationNumber ?? "quotation"}
+                  </Link>
+                </div>
+              )}
               {invoice.parentInvoiceId && (
                 <div className="pt-2 border-t border-border">
                   <Link href={`/finance/invoices/${invoice.parentInvoiceId}`} className="text-xs text-navy hover:underline">View original invoice</Link>

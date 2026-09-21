@@ -86,6 +86,7 @@ export type InvoiceDetail = {
   revisionNumber: number;
   parentInvoiceId: string | null;
   quotationId: string | null;
+  quotationNumber: string | null;
   customerId: string;
   customerName: string;
   subtotal: number;
@@ -118,7 +119,7 @@ export async function getInvoiceDetail(id: string, permissions: UserPermissions)
     const supabase = createServiceClient();
     const { data, error } = await supabase
       .from("invoices")
-      .select("*, customers(name), invoice_line_items(*)")
+      .select("*, customers(name), invoice_line_items(*), quotations(quotation_number)")
       .eq("id", id)
       .maybeSingle();
     if (error || !data || !data.customer_id) return null;
@@ -130,6 +131,9 @@ export async function getInvoiceDetail(id: string, permissions: UserPermissions)
 
     const customer = data.customers as unknown as { name: string } | { name: string }[] | null;
     const customerName = Array.isArray(customer) ? customer[0]?.name : customer?.name;
+
+    const linkedQuotation = data.quotations as unknown as { quotation_number: string | null } | { quotation_number: string | null }[] | null;
+    const quotationNumber = Array.isArray(linkedQuotation) ? linkedQuotation[0]?.quotation_number : linkedQuotation?.quotation_number;
 
     const lineItems = ((data.invoice_line_items ?? []) as Array<{ id: string; line_order: number; product_service: string; description: string | null; quantity: string; unit: string | null; unit_price: string; line_total: string }>)
       .sort((a, b) => a.line_order - b.line_order)
@@ -145,6 +149,7 @@ export async function getInvoiceDetail(id: string, permissions: UserPermissions)
       revisionNumber: data.revision_number ?? 1,
       parentInvoiceId: data.parent_invoice_id,
       quotationId: data.quotation_id,
+      quotationNumber: quotationNumber ?? null,
       customerId: data.customer_id,
       customerName: customerName ?? "—",
       subtotal: Number(data.subtotal ?? 0),

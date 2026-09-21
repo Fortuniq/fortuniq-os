@@ -3,13 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pencil, Send, CheckCircle2, FileEdit, Copy, Download } from "lucide-react";
+import { Pencil, Send, CheckCircle2, FileEdit, Copy, Download, Receipt } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Badge, statusTone } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { formatZARFull, formatDate } from "@/lib/format";
 import type { QuotationDetail } from "@/lib/quotations-data";
-import { submitQuotationForApproval, approveQuotation, sendQuotation, reviseQuotation } from "../quotation-actions";
+import { isConvertibleQuotationStatus, type QuotationStatus } from "@/lib/finance-core";
+import { submitQuotationForApproval, approveQuotation, sendQuotation, reviseQuotation, convertQuotationToInvoice } from "../quotation-actions";
 
 export function QuotationDetailView({
   quotation,
@@ -25,6 +26,7 @@ export function QuotationDetailView({
   const [isPending, startTransition] = useTransition();
 
   const isPreIssue = quotation.status === "Draft" || quotation.status === "Pending Approval";
+  const canConvert = isConvertibleQuotationStatus(quotation.status as QuotationStatus) && !quotation.convertedToInvoiceId;
 
   function run(action: () => Promise<{ error?: string; id?: string }>) {
     setError(null);
@@ -32,6 +34,16 @@ export function QuotationDetailView({
       const result = await action();
       if (result?.error) { setError(result.error); return; }
       if (result?.id) { router.push(`/finance/quotations/${result.id}`); }
+      router.refresh();
+    });
+  }
+
+  function handleConvert() {
+    setError(null);
+    startTransition(async () => {
+      const result = await convertQuotationToInvoice(quotation.id);
+      if (result?.error) { setError(result.error); return; }
+      if (result?.invoiceId) { router.push(`/finance/invoices/${result.invoiceId}`); }
       router.refresh();
     });
   }
@@ -82,6 +94,11 @@ export function QuotationDetailView({
         {!isPreIssue && quotation.status !== "Revised" && canEdit && (
           <button disabled={isPending} onClick={() => run(() => reviseQuotation(quotation.id))} className="flex items-center gap-1.5 text-sm font-semibold text-navy bg-white border border-border px-3.5 py-2 rounded-lg hover:bg-surface">
             <Copy className="w-4 h-4" /> Create Revision
+          </button>
+        )}
+        {canConvert && canEdit && (
+          <button disabled={isPending} onClick={handleConvert} className="flex items-center gap-1.5 text-sm font-semibold text-white bg-emerald-600 px-3.5 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+            <Receipt className="w-4 h-4" /> Convert to Invoice
           </button>
         )}
       </div>
@@ -158,6 +175,11 @@ export function QuotationDetailView({
               <SummaryRow label="Valid Until" value={quotation.validUntil ? formatDate(quotation.validUntil) : "—"} />
               {quotation.approvedByName && <SummaryRow label="Approved By" value={quotation.approvedByName} />}
               {quotation.sentAt && <SummaryRow label="Sent On" value={formatDate(quotation.sentAt)} />}
+              {quotation.convertedToInvoiceId && (
+                <div className="pt-2 border-t border-border">
+                  <Link href={`/finance/invoices/${quotation.convertedToInvoiceId}`} className="text-xs text-navy hover:underline">View invoice</Link>
+                </div>
+              )}
               {quotation.parentQuotationId && (
                 <div className="pt-2 border-t border-border">
                   <Link href={`/finance/quotations/${quotation.parentQuotationId}`} className="text-xs text-navy hover:underline">View original quotation</Link>
