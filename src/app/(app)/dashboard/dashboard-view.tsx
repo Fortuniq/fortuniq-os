@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { DollarSign, FileText, ClipboardList, Users, Calendar as CalendarIcon, Workflow, ArrowRight } from "lucide-react";
+import { DollarSign, FileText, ClipboardList, Users, Calendar as CalendarIcon } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -12,12 +12,16 @@ import {
 import { AttendanceCard } from "./AttendanceCard";
 import { MyAttendanceHistory } from "./MyAttendanceHistory";
 import { MyTasksCard } from "./MyTasksCard";
+import { MyWorkflowCard } from "./MyWorkflowCard";
 import { DocumentExpiryCard } from "./DocumentExpiryCard";
 import { HCMRemindersCard } from "./HCMRemindersCard";
 import { MyTenderTasksCard } from "./MyTenderTasksCard";
+import { FuelPricesCard } from "./FuelPricesCard";
+import { CustomizableDashboardGrid } from "./CustomizableDashboardGrid";
 import type { MyTask, TaskGroups } from "@/lib/tasks-core";
 import type { CalendarEvent } from "@/lib/calendar";
 import type { AttendanceRecord } from "@/lib/attendance-core";
+import type { DashboardWidgetLayoutEntry } from "@/lib/dashboard-widgets";
 
 type ExpiringDoc = { id: string; name: string; category: string; expiryDate: string; status: string };
 
@@ -43,6 +47,7 @@ type DashboardProps = {
   };
   workflowByModule: Record<string, number>;
   moduleCards: { key: string; label: string; href: string; taskCount: number }[];
+  dashboardLayout: DashboardWidgetLayoutEntry[];
   hasBroadVisibility: boolean;
   orgStats: { total: number; overdue: number } | null;
   salesTrend: { month: string; sales: number }[] | null;
@@ -72,10 +77,8 @@ function eventDayLabel(dateStr: string): string {
 
 export function DashboardView({
   firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowByModule,
-  moduleCards, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
+  moduleCards, dashboardLayout, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
-  const workflowEntries = Object.entries(workflowByModule).filter(([, count]) => count > 0);
-
   return (
     <div>
       <PageHeader
@@ -127,45 +130,23 @@ export function DashboardView({
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-        <MyTasksCard tasks={myTasks} openCount={myTasks.length} />
-
-        {/* My Workflow */}
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <span className="flex items-center gap-1.5">
-                <Workflow className="w-3.5 h-3.5 text-orange" /> My Workflow
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-1">
-            {workflowEntries.length === 0 && <p className="text-sm text-light-grey py-2">No workflow items waiting on you.</p>}
-            {workflowEntries.map(([moduleKey, count]) => {
-              const card = moduleCards.find((c) => c.key === moduleKey);
-              return (
-                <Link
-                  key={moduleKey}
-                  href={card?.href ?? "#"}
-                  className="flex items-center justify-between py-2 border-b border-border last:border-0 hover:text-orange transition-colors"
-                >
-                  <span className="text-sm text-navy capitalize">{card?.label ?? moduleKey}</span>
-                  <span className="text-xs font-semibold text-orange flex items-center gap-1">
-                    {count} item{count === 1 ? "" : "s"} <ArrowRight className="w-3 h-3" />
-                  </span>
-                </Link>
-              );
-            })}
-          </CardBody>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-        <MyAttendanceHistory records={attendanceHistory} />
-        <DocumentExpiryCard documents={expiringDocuments} />
-        <HCMRemindersCard reminders={hcmReminders} isHR={role === "HR/Admin" || hasBroadVisibility} />
-        <MyTenderTasksCard assignments={myTenderAssignments} />
-      </div>
+      {/* Customizable "My Workspace" widgets — Project ORION Phase 1. Show/
+          hide/resize/reorder, saved per employee. Deliberately excludes
+          Attendance (pinned above, per the brief) and Calendar (getting
+          its own full redesign in a later phase) — see
+          CustomizableDashboardGrid.tsx / dashboard-widgets.ts. */}
+      <CustomizableDashboardGrid
+        initialLayout={dashboardLayout}
+        content={{
+          myTasks: <MyTasksCard tasks={myTasks} openCount={myTasks.length} />,
+          myWorkflow: <MyWorkflowCard workflowByModule={workflowByModule} moduleCards={moduleCards} />,
+          attendanceHistory: <MyAttendanceHistory records={attendanceHistory} />,
+          documentExpiry: <DocumentExpiryCard documents={expiringDocuments} />,
+          hcmReminders: <HCMRemindersCard reminders={hcmReminders} isHR={role === "HR/Admin" || hasBroadVisibility} />,
+          myTenderTasks: <MyTenderTasksCard assignments={myTenderAssignments} />,
+          fuelPrices: !hasBroadVisibility ? <FuelPricesCard fuelPrices={fuelPrices} /> : undefined,
+        }}
+      />
 
       {/* Relevant module cards — only modules this person is permitted to access */}
       {moduleCards.length > 0 && (
@@ -263,27 +244,9 @@ export function DashboardView({
           )}
         </>
       )}
-
-      {/* Fuel prices for everyone else — public reference data, not gated */}
-      {!hasBroadVisibility && fuelPrices.length > 0 && (
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>Live Fuel Prices</CardTitle>
-            <span className="text-xs text-light-grey">Gauteng / Inland</span>
-          </CardHeader>
-          <CardBody className="space-y-3">
-            {fuelPrices.map((f) => (
-              <div key={f.product} className="flex items-center justify-between">
-                <span className="text-sm text-navy">{f.product}</span>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-navy">R{f.price.toFixed(2)}</p>
-                  <p className="text-xs text-emerald-600">{f.change.toFixed(2)}</p>
-                </div>
-              </div>
-            ))}
-          </CardBody>
-        </Card>
-      )}
+      {/* Note: for non-broad-visibility users, Live Fuel Prices now renders
+          as the "fuelPrices" customizable widget above (FuelPricesCard),
+          not as a separate hard-coded block — avoids showing it twice. */}
     </div>
   );
 }

@@ -10,6 +10,9 @@ import { getMyLeaveRequests, getPendingLeaveRequests } from "@/lib/leave";
 import { isWithinDays, isAnniversaryToday } from "@/lib/hcm-core";
 import { getMyTenderStageAssignments } from "@/lib/tender-assignments";
 import { NAV_ITEMS } from "@/lib/nav";
+import { isExpired, isExpiringSoon } from "@/lib/documents-core";
+import { mergeDashboardLayout, type DashboardWidgetKey } from "@/lib/dashboard-widgets";
+import { getDashboardLayout } from "@/lib/dashboard-layout-data";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -710,6 +713,30 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
   const hasBroadVisibility = permissions.isAdmin || permissions.role === "Management";
   const orgStats = hasBroadVisibility ? await getOrganisationTaskStats() : null;
 
+  // Which customizable "personal productivity" widgets are even
+  // possible to show for THIS person, right now (Project ORION Phase 1
+  // — see docs/EMPLOYEE_DASHBOARD.md and dashboard-widgets.ts). This
+  // mirrors each widget component's own "nothing to show" check
+  // (MyAttendanceHistory/DocumentExpiryCard/HCMRemindersCard/
+  // MyTenderTasksCard all already return null when empty) so the
+  // Customize panel never offers a widget with nothing in it. My Tasks
+  // and My Workflow are always available — both already render their
+  // own empty state rather than nothing at all.
+  const hcmHasAnything =
+    hcmReminders.upcomingLeave.length > 0 || hcmReminders.myPendingLeaveCount > 0 ||
+    (isHRForReminders && hcmReminders.orgPendingLeaveCount > 0) || hcmReminders.probationEndingSoon ||
+    hcmReminders.isBirthdayToday || hcmReminders.isWorkAnniversaryToday;
+  const availableWidgetKeys: DashboardWidgetKey[] = [
+    "myTasks",
+    "myWorkflow",
+    ...(attendanceHistory.length > 0 ? (["attendanceHistory"] as const) : []),
+    ...(expiringDocuments.some((d) => isExpired(d.expiryDate) || isExpiringSoon(d.expiryDate)) ? (["documentExpiry"] as const) : []),
+    ...(hcmHasAnything ? (["hcmReminders"] as const) : []),
+    ...(myTenderAssignments.length > 0 ? (["myTenderTasks"] as const) : []),
+    ...(!hasBroadVisibility && raw.fuelPrices.length > 0 ? (["fuelPrices"] as const) : []),
+  ];
+  const dashboardLayout = mergeDashboardLayout(availableWidgetKeys, await getDashboardLayout(permissions.email));
+
   return {
     firstName: permissions.name?.split(" ")[0] ?? "there",
     role: permissions.role ?? null,
@@ -732,6 +759,8 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     orgStats,
     salesTrend: hasBroadVisibility ? raw.salesTrend : null,
     orgStatsSummary: hasBroadVisibility ? raw.stats : null,
+    availableWidgetKeys,
+    dashboardLayout,
   };
 }
 
