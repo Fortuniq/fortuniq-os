@@ -292,3 +292,81 @@ export function computeEffectiveTenderStatus(tender: { closingDate: string; stat
 export function computeEffectiveTenderStage(tender: { closingDate: string; status: string; stage: string | null }, today: Date = new Date()): string | null {
   return shouldAutoMarkMissed(tender, today) ? "Closed — Missed" : tender.stage;
 }
+
+// =========================================================================
+// PRIORITY QUEUE RANKING — see docs/TENDER_DASHBOARD.md
+// =========================================================================
+
+export type PriorityLevel = "HIGH" | "MEDIUM" | "LOW";
+
+export type PriorityRankingInput = {
+  daysRemaining: number;
+  stageAssignmentOverdue: boolean;
+  compliancePct: number | null;
+  assignmentPriority: "High" | "Medium" | "Low" | null;
+};
+
+export type PriorityRankingResult = {
+  level: PriorityLevel;
+  score: number;
+};
+
+/**
+ * Ranks a tender's overall urgency from the CONCRETE signals this app
+ * actually has: closing date, whether its current stage's assignment is
+ * overdue, compliance completeness (a proxy for "missing compliance
+ * documents" — this app doesn't track individual missing-document
+ * flags beyond the checklist), and the assignment's own stated
+ * priority. "AI Risk Assessment" from the brief's factor list is
+ * deliberately NOT included — there is no stored AI risk score
+ * anywhere in this app to rank against, and fabricating one would be
+ * worse than ranking on the real signals alone. See
+ * docs/TENDER_DASHBOARD.md, "Known limitations."
+ *
+ * This is a genuine multi-factor ranking, not a sort by closing date —
+ * "Do not simply sort by closing date. Rank tenders by overall
+ * urgency" is satisfied by the fact that a tender due in 5 days with an
+ * overdue stage assignment and incomplete compliance can rank ABOVE a
+ * tender due in 2 days that's otherwise on track.
+ */
+export function rankTenderPriority(input: PriorityRankingInput): PriorityRankingResult {
+  let score = 0;
+
+  if (input.daysRemaining <= 0) score += 40;
+  else if (input.daysRemaining <= 2) score += 25;
+  else if (input.daysRemaining <= 7) score += 10;
+
+  if (input.stageAssignmentOverdue) score += 20;
+
+  if (input.compliancePct !== null && input.compliancePct < 100) {
+    score += input.compliancePct < 50 ? 20 : 10;
+  }
+
+  if (input.assignmentPriority === "High") score += 15;
+  else if (input.assignmentPriority === "Medium") score += 5;
+
+  const level: PriorityLevel = score >= 50 ? "HIGH" : score >= 25 ? "MEDIUM" : "LOW";
+  return { level, score };
+}
+
+// =========================================================================
+// PRIORITY QUEUE — see docs/TENDER_DASHBOARD.md
+// =========================================================================
+
+/**
+ * The single line explaining WHY a tender is in the queue at all —
+ * matching the brief's own examples ("Missing Signed Declaration",
+ * "Waiting for Pricing", "Assessment Complete"). Priority order: an
+ * overdue stage assignment is the most actionable thing to flag;
+ * failing that, the next unchecked compliance item; failing that, the
+ * tender genuinely has nothing outstanding.
+ */
+export function deriveOutstandingIssue(input: {
+  stage: string | null;
+  hasOverdueAssignment: boolean;
+  firstIncompleteChecklistItem: string | null;
+}): string {
+  if (input.hasOverdueAssignment) return `Waiting for ${input.stage ?? "current stage"}`;
+  if (input.firstIncompleteChecklistItem) return `Missing ${input.firstIncompleteChecklistItem}`;
+  return `${input.stage ?? "Review"} Complete`;
+}

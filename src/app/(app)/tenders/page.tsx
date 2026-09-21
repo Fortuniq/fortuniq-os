@@ -1,4 +1,4 @@
-import { getTenders, getTenderChecklist, getTenderWorkflowCounts, getEmployeeByEmail } from "@/lib/data";
+import { getTenders, getTenderChecklist, getTenderWorkflowCounts, getEmployeeByEmail, getFirstOutstandingChecklistItemByTender } from "@/lib/data";
 import { requireModuleAccess, getCurrentUserPermissions } from "@/lib/permissions";
 import { checkPermissionAction } from "@/lib/rbac";
 import { getAllActiveTenderAssignments } from "@/lib/tender-assignments";
@@ -9,7 +9,7 @@ import { TendersView } from "./tenders-view";
 export default async function TendersPage() {
   await requireModuleAccess("tenders");
   const permissions = await getCurrentUserPermissions();
-  const [tenders, checklist, canCreate, workflowCounts, viewerEmployee, allAssignments, closingSoonWarningDays] = await Promise.all([
+  const [tenders, checklist, canCreate, workflowCounts, viewerEmployee, allAssignments, closingSoonWarningDays, outstandingChecklist] = await Promise.all([
     getTenders(),
     getTenderChecklist(),
     checkPermissionAction(permissions, "tenders", "Create"),
@@ -17,6 +17,7 @@ export default async function TendersPage() {
     permissions.email ? getEmployeeByEmail(permissions.email) : Promise.resolve(null),
     getAllActiveTenderAssignments(),
     getClosingSoonWarningDays(),
+    getFirstOutstandingChecklistItemByTender(),
   ]);
 
   // "Tender deadlines should never rely on manual monitoring" — see
@@ -59,6 +60,7 @@ export default async function TendersPage() {
       tenders={tenders} checklist={checklist} canManage={canCreate} workflowCounts={workflowCounts}
       teamAssignments={teamAssignments} showTeamAssignments={isBroadVisibility || teamAssignments.length > 0}
       closingSoonWarningDays={closingSoonWarningDays} canManageSettings={permissions.isAdmin}
+      outstandingChecklist={outstandingChecklist}
     />
   );
 }

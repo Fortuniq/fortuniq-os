@@ -6,29 +6,32 @@ import type { Column } from "./DataTable";
 /**
  * A drop-in alternative to DataTable — same Column<T>/data props — for
  * wide tables that need to stay usable at scale (see
- * docs/TENDER_REGISTER.md). Two things DataTable doesn't do:
+ * docs/TENDER_REGISTER.md and docs/TENDER_DASHBOARD.md). Three things
+ * DataTable doesn't do:
  *
- * 1. The FIRST column is sticky on the left during horizontal scroll,
- *    with a solid background and a right-edge divider, so the row's
- *    identity stays visible no matter how far right you've scrolled.
- * 2. A floating horizontal scrollbar stays pinned near the bottom of
+ * 1. The FIRST column is always sticky on the left during horizontal
+ *    scroll, with a solid background and a right-edge divider.
+ * 2. The LAST column is ALSO sticky, on the right, when `stickyLast` is
+ *    true (opt-in — most tables using this component don't need it;
+ *    the Tender Register's Actions column does, so identity AND
+ *    actions both stay reachable no matter how far you've scrolled).
+ * 3. A floating horizontal scrollbar stays pinned near the bottom of
  *    the viewport while the table is on screen, synced bidirectionally
- *    with the table's own scroll position — so reaching the scrollbar
- *    never requires scrolling to the bottom of a long register first.
- *    It's hidden entirely when the table doesn't overflow horizontally.
+ *    with the table's own scroll position. Hidden entirely when the
+ *    table doesn't overflow horizontally.
  *
  * Deliberately a SEPARATE component from DataTable rather than a
- * modification to it — DataTable is used across many pages in this app
- * where sticky-column/floating-scrollbar behaviour isn't wanted or
- * would be visual noise; this is opt-in, only for tables that actually
- * need it at scale.
+ * modification to it — this opt-in behaviour would be visual noise on
+ * the many other tables in this app that don't need it.
  */
 export function StickyScrollDataTable<T extends { id: string | number }>({
   columns,
   data,
+  stickyLast = false,
 }: {
   columns: Column<T>[];
   data: T[];
+  stickyLast?: boolean;
 }) {
   const tableWrapperRef = useRef<HTMLDivElement>(null);
   const floatingScrollRef = useRef<HTMLDivElement>(null);
@@ -37,11 +40,10 @@ export function StickyScrollDataTable<T extends { id: string | number }>({
   const [showFloatingScrollbar, setShowFloatingScrollbar] = useState(false);
   const [inView, setInView] = useState(true);
 
-  const [firstCol, ...restCols] = columns;
+  const firstCol = columns[0];
+  const lastCol = stickyLast && columns.length > 1 ? columns[columns.length - 1] : null;
+  const middleCols = lastCol ? columns.slice(1, -1) : columns.slice(1);
 
-  // Keep the floating scrollbar's inner "track" the same width as the
-  // real table, and only show it when there's actually overflow to
-  // scroll — recalculated on data/column changes and on window resize.
   useEffect(() => {
     function measure() {
       const el = tableWrapperRef.current;
@@ -59,9 +61,6 @@ export function StickyScrollDataTable<T extends { id: string | number }>({
     };
   }, [data, columns]);
 
-  // Only keep the floating scrollbar visible while the table itself is
-  // actually on screen — "remain visible near the bottom of the user's
-  // viewport while the Tender Register is on screen," per the brief.
   useEffect(() => {
     const el = tableWrapperRef.current;
     if (!el) return;
@@ -86,45 +85,47 @@ export function StickyScrollDataTable<T extends { id: string | number }>({
     }
   }
 
+  function cellClass(col: Column<T>) {
+    return `px-4 py-3 whitespace-nowrap ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`;
+  }
+
   return (
     <div className="relative">
       <div ref={tableWrapperRef} onScroll={handleTableScroll} className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th
-                className="sticky left-0 z-10 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-wide text-grey text-left shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
-              >
+              <th className={`sticky left-0 z-10 bg-white text-xs font-semibold uppercase tracking-wide text-grey text-left shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] ${cellClass(firstCol)}`}>
                 {firstCol.header}
               </th>
-              {restCols.map((col) => (
-                <th
-                  key={String(col.key)}
-                  className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-grey whitespace-nowrap ${
-                    col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
-                  }`}
-                >
+              {middleCols.map((col) => (
+                <th key={String(col.key)} className={`text-xs font-semibold uppercase tracking-wide text-grey ${cellClass(col)}`}>
                   {col.header}
                 </th>
               ))}
+              {lastCol && (
+                <th className={`sticky right-0 z-10 bg-white text-xs font-semibold uppercase tracking-wide text-grey shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)] ${cellClass(lastCol)}`}>
+                  {lastCol.header}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {data.map((row) => (
               <tr key={row.id} className="border-b border-border last:border-0 hover:bg-surface/60 transition-colors group">
-                <td className="sticky left-0 z-10 bg-white group-hover:bg-surface/60 px-4 py-3 text-navy shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] transition-colors">
+                <td className={`sticky left-0 z-10 bg-white group-hover:bg-surface/60 text-navy shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] transition-colors ${cellClass(firstCol)}`}>
                   {firstCol.render ? firstCol.render(row) : String((row as Record<string, unknown>)[firstCol.key as string] ?? "")}
                 </td>
-                {restCols.map((col) => (
-                  <td
-                    key={String(col.key)}
-                    className={`px-4 py-3 text-navy whitespace-nowrap ${
-                      col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
-                    }`}
-                  >
+                {middleCols.map((col) => (
+                  <td key={String(col.key)} className={`text-navy ${cellClass(col)}`}>
                     {col.render ? col.render(row) : String((row as Record<string, unknown>)[col.key as string] ?? "")}
                   </td>
                 ))}
+                {lastCol && (
+                  <td className={`sticky right-0 z-10 bg-white group-hover:bg-surface/60 text-navy shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)] transition-colors ${cellClass(lastCol)}`}>
+                    {lastCol.render ? lastCol.render(row) : String((row as Record<string, unknown>)[lastCol.key as string] ?? "")}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

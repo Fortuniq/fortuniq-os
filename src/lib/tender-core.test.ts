@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment, formatRelativeActivityTime, isTenderStale, calculateDaysRemaining, formatDaysRemaining, isClosingSoon, isDueToday, shouldAutoMarkMissed, computeEffectiveTenderStatus, computeEffectiveTenderStage } from "./tender-core";
+import { calculateCompliancePct, canTransitionTenderStage, checkSubmissionReadiness, normalizeTenderStage, isStageOverdue, validateStageAssignment, formatRelativeActivityTime, isTenderStale, calculateDaysRemaining, formatDaysRemaining, isClosingSoon, isDueToday, shouldAutoMarkMissed, computeEffectiveTenderStatus, computeEffectiveTenderStage, rankTenderPriority, deriveOutstandingIssue } from "./tender-core";
 
 describe("calculateCompliancePct", () => {
   it("returns null, not 0, for a tender with no checklist yet", () => {
@@ -287,5 +287,49 @@ describe("computeEffectiveTenderStatus / computeEffectiveTenderStage", () => {
     const tender = { closingDate: "2026-09-01", status: "Open", stage: "Pricing" };
     expect(computeEffectiveTenderStatus(tender, TODAY)).toBe("Open");
     expect(computeEffectiveTenderStage(tender, TODAY)).toBe("Pricing");
+  });
+});
+
+describe("rankTenderPriority", () => {
+  it("ranks a tender due today, overdue, incomplete, and high priority as HIGH", () => {
+    const result = rankTenderPriority({ daysRemaining: 0, stageAssignmentOverdue: true, compliancePct: 40, assignmentPriority: "High" });
+    expect(result.level).toBe("HIGH");
+  });
+
+  it("ranks a tender due in a week, on track, low priority as LOW", () => {
+    const result = rankTenderPriority({ daysRemaining: 9, stageAssignmentOverdue: false, compliancePct: 100, assignmentPriority: "Low" });
+    expect(result.level).toBe("LOW");
+  });
+
+  it("does NOT simply sort by closing date — a tender due later can outrank one due sooner if it's otherwise riskier", () => {
+    const soonButHealthy = rankTenderPriority({ daysRemaining: 2, stageAssignmentOverdue: false, compliancePct: 100, assignmentPriority: "Low" });
+    const laterButAtRisk = rankTenderPriority({ daysRemaining: 5, stageAssignmentOverdue: true, compliancePct: 30, assignmentPriority: "High" });
+    expect(laterButAtRisk.score).toBeGreaterThan(soonButHealthy.score);
+  });
+
+  it("treats a null compliance (not yet assessed) as not incomplete — no penalty applied", () => {
+    const withNull = rankTenderPriority({ daysRemaining: 5, stageAssignmentOverdue: false, compliancePct: null, assignmentPriority: null });
+    const withComplete = rankTenderPriority({ daysRemaining: 5, stageAssignmentOverdue: false, compliancePct: 100, assignmentPriority: null });
+    expect(withNull.score).toBe(withComplete.score);
+  });
+
+  it("penalises severely incomplete compliance more than mildly incomplete", () => {
+    const severe = rankTenderPriority({ daysRemaining: 5, stageAssignmentOverdue: false, compliancePct: 20, assignmentPriority: null });
+    const mild = rankTenderPriority({ daysRemaining: 5, stageAssignmentOverdue: false, compliancePct: 90, assignmentPriority: null });
+    expect(severe.score).toBeGreaterThan(mild.score);
+  });
+});
+
+describe("deriveOutstandingIssue", () => {
+  it("prioritises an overdue stage assignment over everything else", () => {
+    expect(deriveOutstandingIssue({ stage: "Pricing", hasOverdueAssignment: true, firstIncompleteChecklistItem: "Signed Declaration" })).toBe("Waiting for Pricing");
+  });
+
+  it("falls back to the first incomplete checklist item, matching the brief's 'Missing X' phrasing", () => {
+    expect(deriveOutstandingIssue({ stage: "Assessment & Verification", hasOverdueAssignment: false, firstIncompleteChecklistItem: "Signed Declaration" })).toBe("Missing Signed Declaration");
+  });
+
+  it("reports the stage as complete when nothing is outstanding", () => {
+    expect(deriveOutstandingIssue({ stage: "Assessment & Verification", hasOverdueAssignment: false, firstIncompleteChecklistItem: null })).toBe("Assessment & Verification Complete");
   });
 });

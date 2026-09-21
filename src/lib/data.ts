@@ -377,18 +377,41 @@ export async function getExpiringDocuments() {
  * (module_key = 'tenders') the rest of this app's dashboard already
  * relies on, rather than a separate tender-task-counting system.
  */
+/**
+ * The first outstanding (unconfirmed) checklist item per tender, across
+ * ALL tenders in one query — used by the Priority Queue's "Missing: X" /
+ * "Waiting: X" line, so it never needs an extra query per tender row.
+ * See docs/TENDER_DASHBOARD.md.
+ */
+export async function getFirstOutstandingChecklistItemByTender(): Promise<Record<string, string>> {
+  if (!supabaseConfigured) return {};
+  try {
+    const supabase = createServiceClient();
+    const { data } = await supabase.from("tender_checklist_items").select("tender_id, item, created_at").eq("done", false).order("created_at", { ascending: true });
+    const result: Record<string, string> = {};
+    for (const row of data ?? []) {
+      if (!result[row.tender_id]) result[row.tender_id] = row.item;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 export async function getTenderWorkflowCounts() {
   const empty = {
     drafting: 0, pricing: 0, awaitingAssessment: 0, submissionReady: 0, dueThisWeek: 0, overdueTasks: 0,
     dueToday: 0, closingThisWeek: 0, closingThisMonth: 0, missed: 0, submitted: 0, awarded: 0, lost: 0,
+    overdueStageAssignments: 0,
   };
   if (!supabaseConfigured) return empty;
   try {
     const supabase = createServiceClient();
-    const [{ data: openTenders }, { data: allTenders }, { data: tasks }] = await Promise.all([
+    const [{ data: openTenders }, { data: allTenders }, { data: tasks }, { data: activeAssignments }] = await Promise.all([
       supabase.from("tenders").select("stage").in("status", ["Open"]),
       supabase.from("tenders").select("closing_date, status, stage"),
       supabase.from("tasks").select("due_date, status").eq("module_key", "tenders").neq("status", "Completed"),
+      supabase.from("tender_stage_assignments").select("due_date").eq("status", "Active"),
     ]);
 
     const counts = { ...empty };
@@ -409,6 +432,18 @@ export async function getTenderWorkflowCounts() {
       const due = new Date(task.due_date + "T00:00:00");
       if (due < todayMidnight) counts.overdueTasks++;
       else if (due <= weekFromNow) counts.dueThisWeek++;
+    }
+
+    // "Overdue ↓ Shows only overdue workflow items" — this is the
+    // Operational Alerts card, distinct from overdueTasks above (which
+    // counts individual overdue TASKS, not tenders). This counts
+    // TENDERS whose current stage assignment has passed its own due
+    // date — the same isStageOverdue() rule already used everywhere
+    // else stage-assignment overdue status is shown. See
+    // docs/TENDER_DASHBOARD.md.
+    for (const a of activeAssignments ?? []) {
+      if (!a.due_date) continue;
+      if (new Date(a.due_date + "T23:59:59").getTime() < today.getTime()) counts.overdueStageAssignments++;
     }
 
     // Dashboard counters (section 10) — computed the same way
@@ -771,9 +806,36 @@ export async function getCustomers() {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("customers").select("*").order("account_value", { ascending: false });
     if (error || !data || data.length === 0) return mock.customers;
-    return data.map((c, i) => ({ id: i + 1, name: c.name, industry: c.industry, accountValue: Number(c.account_value), status: c.status, contact: c.contact }));
+    return data.map((c) => ({
+      id: c.id, // real uuid — needed so Quotations/Invoices can reference customers by id, not free-text name
+      customerCode: c.customer_code ?? null,
+      name: c.name,
+      industry: c.industry,
+      accountValue: Number(c.account_value),
+      status: c.status,
+      contact: c.contact,
+      email: c.email ?? null,
+      phone: c.phone ?? null,
+      billingAddress: c.billing_address ?? null,
+      notes: c.notes ?? null,
+    }));
   } catch {
     return mock.customers;
+  }
+}
+
+/** For pickers (Quotations/Invoices) that just need id + display name, not the full account view. */
+export async function getCustomerOptions(): Promise<{ id: string; customerCode: string | null; name: string }[]> {
+  if (!supabaseConfigured) {
+    return mock.customers.map((c) => ({ id: String(c.id), customerCode: null, name: c.name }));
+  }
+  try {
+    const supabase = createServiceClient();
+    const { data, error } = await supabase.from("customers").select("id, customer_code, name").order("name");
+    if (error || !data) return [];
+    return data.map((c) => ({ id: c.id, customerCode: c.customer_code ?? null, name: c.name }));
+  } catch {
+    return [];
   }
 }
 

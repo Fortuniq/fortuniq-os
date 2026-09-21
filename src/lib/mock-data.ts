@@ -143,11 +143,11 @@ export const fleet = [
 
 // ---------- Customers ----------
 export const customers = [
-  { id: 1, name: "Rustenburg Mining Group", industry: "Mining", accountValue: 8_100_000, status: "Active", contact: "M. van der Merwe" },
-  { id: 2, name: "Tshwane Metro", industry: "Government", accountValue: 2_900_000, status: "Active", contact: "N. Mokgatle" },
-  { id: 3, name: "Kgomotso Logistics", industry: "Logistics", accountValue: 1_840_000, status: "Active", contact: "K. Sebeko" },
-  { id: 4, name: "Agri Co-op Ltd", industry: "Agriculture", accountValue: 620_000, status: "Active", contact: "J. Botha" },
-  { id: 5, name: "Vaal Transport Group", industry: "Logistics", accountValue: 410_000, status: "Prospect", contact: "R. Naidoo" },
+  { id: 1, customerCode: "CUST-0001", name: "Rustenburg Mining Group", industry: "Mining", accountValue: 8_100_000, status: "Active", contact: "M. van der Merwe", email: null, phone: null, billingAddress: null, notes: null },
+  { id: 2, customerCode: "CUST-0002", name: "Tshwane Metro", industry: "Government", accountValue: 2_900_000, status: "Active", contact: "N. Mokgatle", email: null, phone: null, billingAddress: null, notes: null },
+  { id: 3, customerCode: "CUST-0003", name: "Kgomotso Logistics", industry: "Logistics", accountValue: 1_840_000, status: "Active", contact: "K. Sebeko", email: null, phone: null, billingAddress: null, notes: null },
+  { id: 4, customerCode: "CUST-0004", name: "Agri Co-op Ltd", industry: "Agriculture", accountValue: 620_000, status: "Active", contact: "J. Botha", email: null, phone: null, billingAddress: null, notes: null },
+  { id: 5, customerCode: "CUST-0005", name: "Vaal Transport Group", industry: "Logistics", accountValue: 410_000, status: "Prospect", contact: "R. Naidoo", email: null, phone: null, billingAddress: null, notes: null },
 ];
 
 // ---------- Sales ----------

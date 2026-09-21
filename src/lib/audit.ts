@@ -26,7 +26,21 @@ export type AuditAction =
   | "clocked_out"
   | "attendance_correction_requested"
   | "attendance_correction_reviewed"
-  | "tender_auto_missed";
+  | "tender_auto_missed"
+  | "customer_created"
+  | "customer_updated"
+  | "quotation_created"
+  | "quotation_issued"
+  | "quotation_revised"
+  | "quotation_accepted"
+  | "quotation_declined"
+  | "quotation_converted"
+  | "invoice_created"
+  | "invoice_issued"
+  | "invoice_revised"
+  | "invoice_cancelled"
+  | "payment_recorded"
+  | "finance_settings_changed";
 
 /**
  * Records an entry in the audit log. Used across the app wherever a

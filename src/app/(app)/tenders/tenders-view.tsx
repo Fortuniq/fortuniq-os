@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Sparkles, CheckSquare, Square, Calendar, Trophy, Archive, Plus, Pencil, Trash2, FolderOpen, Inbox } from "lucide-react";
+import { ClipboardList, Sparkles, CheckSquare, Square, Trophy, Archive, Plus, Pencil, Trash2, FolderOpen, Inbox } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge, statusTone } from "@/components/ui/Badge";
@@ -14,7 +14,7 @@ import { formatRelativeActivityTime, isTenderStale, computeEffectiveTenderStatus
 import { TenderFormModal } from "./TenderFormModal";
 import { deleteTender, updateClosingSoonWarningDaysAction } from "./tender-actions";
 import { TeamAssignmentsWidget } from "./TeamAssignmentsWidget";
-import { NextDeadlinesWidget } from "./NextDeadlinesWidget";
+import { PriorityQueueWidget } from "./PriorityQueueWidget";
 
 type Tender = {
   id: string | number;
@@ -54,9 +54,18 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTender, setEditingTender] = useState<Tender | null>(null);
-  const [stageFilter, setStageFilter] = useState<string | null>(null);
 
-  // ---------- Filtering & Sorting — see docs/TENDER_REGISTER.md ----------
+  // Section 6: a SINGLE primary filter drives KPI-card highlighting, the
+  // dynamic Register heading, and the actual filtering — replacing the
+  // separate stageFilter/statusFilter-as-KPI concepts from earlier
+  // iterations, so there is exactly one active "why am I seeing these
+  // rows" state at a time, per the brief. See docs/TENDER_DASHBOARD.md.
+  type PrimaryFilter =
+    | { kind: "stage"; stage: string }
+    | { kind: "dueToday" | "dueThisWeek" | "overdue" | "missed" };
+  const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter | null>(null);
+
+  // ---------- Secondary filters & sorting — see docs/TENDER_REGISTER.md ----------
   const [createdByFilter, setCreatedByFilter] = useState("");
   const [assignedToFilter, setAssignedToFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -66,14 +75,38 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
 
   const createdByOptions = Array.from(new Set(tenders.map((t) => t.createdByName).filter((n): n is string => !!n))).sort();
   const assignedToOptions = Array.from(new Set(tenders.map((t) => t.assignedToName).filter((n): n is string => !!n))).sort();
+  const overdueTenderIds = new Set(
+    teamAssignments.filter((a) => a.dueDate && new Date(a.dueDate + "T23:59:59") < new Date()).map((a) => a.tenderId)
+  );
 
   function toggleSort(key: typeof sortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
   }
 
+  function effectiveOf(t: Tender) {
+    return {
+      status: computeEffectiveTenderStatus({ closingDate: t.closing, status: t.status, stage: t.stage }),
+      stage: computeEffectiveTenderStage({ closingDate: t.closing, status: t.status, stage: t.stage }),
+    };
+  }
+
   let visibleTenders = tenders;
-  if (stageFilter) visibleTenders = visibleTenders.filter((t) => t.stage === stageFilter);
+  if (primaryFilter?.kind === "stage") {
+    visibleTenders = visibleTenders.filter((t) => effectiveOf(t).stage === primaryFilter.stage);
+  } else if (primaryFilter?.kind === "dueToday") {
+    visibleTenders = visibleTenders.filter((t) => effectiveOf(t).status === "Open" && isDueToday(calculateDaysRemaining(t.closing)));
+  } else if (primaryFilter?.kind === "dueThisWeek") {
+    visibleTenders = visibleTenders.filter((t) => {
+      if (effectiveOf(t).status !== "Open") return false;
+      const days = calculateDaysRemaining(t.closing);
+      return days >= 0 && days <= 7;
+    });
+  } else if (primaryFilter?.kind === "overdue") {
+    visibleTenders = visibleTenders.filter((t) => overdueTenderIds.has(String(t.id)));
+  } else if (primaryFilter?.kind === "missed") {
+    visibleTenders = visibleTenders.filter((t) => effectiveOf(t).status === "Missed");
+  }
   if (createdByFilter) visibleTenders = visibleTenders.filter((t) => t.createdByName === createdByFilter);
   if (assignedToFilter) visibleTenders = visibleTenders.filter((t) => t.assignedToName === assignedToFilter);
   if (statusFilter) visibleTenders = visibleTenders.filter((t) => t.status === statusFilter);
@@ -94,8 +127,34 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
     return sortDir === "asc" ? cmp : -cmp;
   });
 
+  const anyFilterActive = !!primaryFilter || !!createdByFilter || !!assignedToFilter || !!statusFilter || !!priorityFilter;
+  function clearAllFilters() {
+    setPrimaryFilter(null);
+    setCreatedByFilter(""); setAssignedToFilter(""); setStatusFilter(""); setPriorityFilter("");
+  }
+
   const open = tenders.filter((t) => t.status === "Open");
   const won = tenders.filter((t) => t.stage === "Closed — Won").length;
+
+  // Section 3: dynamic Register heading — "helps users immediately
+  // understand why those tenders are displayed."
+  const registerHeadingLabel = !primaryFilter
+    ? `All Open Tenders (${open.length})`
+    : primaryFilter.kind === "stage" ? `${primaryFilter.stage} (${visibleTenders.length})`
+    : primaryFilter.kind === "dueToday" ? `Due Today (${visibleTenders.length})`
+    : primaryFilter.kind === "dueThisWeek" ? `Due This Week (${visibleTenders.length})`
+    : primaryFilter.kind === "overdue" ? `Overdue (${visibleTenders.length})`
+    : `Missed (${visibleTenders.length})`;
+
+  // Priority Queue needs each tender's first incomplete checklist item —
+  // the checklist prop here is a single tender's items today (see the
+  // Submission Checklist sidebar card, unchanged from before), not
+  // per-tender, so this map is deliberately empty until checklist data
+  // is fetched per-tender for the whole register — PriorityQueueWidget
+  // falls back to compliance% (already per-tender) for its "Missing"
+  // signal when this map has no entry. See docs/TENDER_DASHBOARD.md,
+  // "Known limitations."
+  const outstandingChecklistByTender: Record<string, string> = {};
 
   const columns: Column<Tender>[] = [
     {
@@ -180,25 +239,24 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
       },
     },
     {
-      key: "workspace", header: "", align: "right" as const,
-      render: (r: Tender) => (
-        <Link href={`/tenders/${r.id}`} className="text-grey hover:text-orange transition-colors inline-block" title="Open document workspace">
-          <FolderOpen className="w-3.5 h-3.5" />
-        </Link>
-      ),
-    },
-    ...(canManage ? [{
-      key: "actions", header: "", align: "right" as const,
+      key: "actions", header: "Actions", align: "right" as const,
       render: (r: Tender) => (
         <div className="flex items-center gap-2 justify-end">
-          <button onClick={() => setEditingTender(r)} className="text-grey hover:text-navy transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
-          <button
-            onClick={() => { if (confirm(`Delete "${r.title}"?`)) deleteTender(String(r.id)); }}
-            className="text-grey hover:text-red-600 transition-colors"
-          ><Trash2 className="w-3.5 h-3.5" /></button>
+          <Link href={`/tenders/${r.id}`} className="text-grey hover:text-orange transition-colors inline-block" title="Open document workspace">
+            <FolderOpen className="w-3.5 h-3.5" />
+          </Link>
+          {canManage && (
+            <>
+              <button onClick={() => setEditingTender(r)} className="text-grey hover:text-navy transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+              <button
+                onClick={() => { if (confirm(`Delete "${r.title}"?`)) deleteTender(String(r.id)); }}
+                className="text-grey hover:text-red-600 transition-colors"
+              ><Trash2 className="w-3.5 h-3.5" /></button>
+            </>
+          )}
         </div>
       ),
-    }] : []),
+    },
   ];
 
   return (
@@ -233,47 +291,48 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
         <StatCard label="Bid Library" value="34" sub="Previous submissions" icon={Archive} />
       </div>
 
-      {/* Tender workflow indicators — click a metric to filter the register below. See docs/TENDER_PLANNER.md. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      {/* SECTION 2 — Workflow. Only the active workflow stages, per the brief's own instruction: "These workflow cards already function correctly. Retain this behaviour." See docs/TENDER_DASHBOARD.md. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[
           { label: "Drafting", value: workflowCounts.drafting, stage: "Drafting" },
           { label: "Pricing", value: workflowCounts.pricing, stage: "Pricing" },
-          { label: "Awaiting Assessment", value: workflowCounts.awaitingAssessment, stage: "Assessment & Verification" },
+          { label: "Assessment & Verification", value: workflowCounts.awaitingAssessment, stage: "Assessment & Verification" },
           { label: "Submission Ready", value: workflowCounts.submissionReady, stage: "Submission Ready" },
-          { label: "Due This Week", value: workflowCounts.dueThisWeek, stage: null },
-          { label: "Overdue Tasks", value: workflowCounts.overdueTasks, stage: null },
-        ].map((m) => (
-          <button
-            key={m.label}
-            onClick={() => m.stage && setStageFilter(stageFilter === m.stage ? null : m.stage)}
-            className={`text-left p-3 rounded-lg border transition-colors ${stageFilter === m.stage && m.stage ? "border-orange bg-orange/5" : "border-border hover:border-orange"}`}
-          >
-            <p className="text-lg font-black text-navy">{m.value}</p>
-            <p className="text-[11px] text-grey">{m.label}</p>
-          </button>
-        ))}
+        ].map((m) => {
+          const selected = primaryFilter?.kind === "stage" && primaryFilter.stage === m.stage;
+          return (
+            <button
+              key={m.label}
+              onClick={() => setPrimaryFilter(selected ? null : { kind: "stage", stage: m.stage })}
+              className={`text-left p-3 rounded-lg border transition-colors ${selected ? "border-orange bg-orange/5" : "border-border hover:border-orange"}`}
+            >
+              <p className="text-lg font-black text-navy">{m.value}</p>
+              <p className="text-[11px] text-grey">{m.label}</p>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Deadline & outcome counters (section 10) — same clickable-filter pattern as the workflow row above. See docs/TENDER_DEADLINES.md. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      {/* SECTION 3 — Operational Alerts. ONLY Due Today / Due This Week / Overdue / Missed — Closing This Month / Submitted / Awarded / Lost are deliberately excluded per the brief ("reporting metrics ... create unnecessary dashboard clutter"). See docs/TENDER_DASHBOARD.md. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[
-          { label: "Due Today", value: workflowCounts.dueToday, status: null },
-          { label: "Closing This Week", value: workflowCounts.closingThisWeek, status: null },
-          { label: "Closing This Month", value: workflowCounts.closingThisMonth, status: null },
-          { label: "Missed", value: workflowCounts.missed, status: "Missed" },
-          { label: "Submitted", value: workflowCounts.submitted, status: null },
-          { label: "Awarded", value: workflowCounts.awarded, status: "Awarded" },
-          { label: "Lost", value: workflowCounts.lost, status: "Lost" },
-        ].map((m) => (
-          <button
-            key={m.label}
-            onClick={() => m.status && setStatusFilter(statusFilter === m.status ? "" : m.status)}
-            className={`text-left p-3 rounded-lg border transition-colors ${statusFilter === m.status && m.status ? "border-orange bg-orange/5" : "border-border hover:border-orange"}`}
-          >
-            <p className="text-lg font-black text-navy">{m.value}</p>
-            <p className="text-[11px] text-grey">{m.label}</p>
-          </button>
-        ))}
+          { label: "Due Today", value: workflowCounts.dueToday, kind: "dueToday" as const },
+          { label: "Due This Week", value: workflowCounts.closingThisWeek, kind: "dueThisWeek" as const },
+          { label: "Overdue", value: workflowCounts.overdueTasks, kind: "overdue" as const },
+          { label: "Missed", value: workflowCounts.missed, kind: "missed" as const },
+        ].map((m) => {
+          const selected = primaryFilter?.kind === m.kind;
+          return (
+            <button
+              key={m.label}
+              onClick={() => setPrimaryFilter(selected ? null : { kind: m.kind })}
+              className={`text-left p-3 rounded-lg border transition-colors ${selected ? "border-orange bg-orange/5" : "border-border hover:border-orange"} ${m.kind === "missed" || m.kind === "overdue" ? "hover:border-red-400" : ""}`}
+            >
+              <p className={`text-lg font-black ${m.value > 0 && (m.kind === "missed" || m.kind === "overdue") ? "text-red-600" : "text-navy"}`}>{m.value}</p>
+              <p className="text-[11px] text-grey">{m.label}</p>
+            </button>
+          );
+        })}
       </div>
 
       {showTeamAssignments && <TeamAssignmentsWidget assignments={teamAssignments} />}
@@ -281,8 +340,11 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Tender Register{stageFilter ? ` — ${stageFilter}` : ""}</CardTitle>
-            {stageFilter && <button onClick={() => setStageFilter(null)} className="text-xs text-orange hover:underline">Clear stage filter</button>}
+            <div>
+              <CardTitle>Tender Register</CardTitle>
+              <p className="text-xs text-light-grey mt-0.5">Showing {registerHeadingLabel}</p>
+            </div>
+            {anyFilterActive && <button onClick={clearAllFilters} className="text-xs text-orange hover:underline">Clear Filters</button>}
           </CardHeader>
           <CardBody className="pt-2">
             <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -329,12 +391,12 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
                 </button>
               )}
             </div>
-            <StickyScrollDataTable columns={columns} data={visibleTenders} />
+            <StickyScrollDataTable columns={columns} data={visibleTenders} stickyLast />
           </CardBody>
         </Card>
 
         <div className="space-y-4">
-          <NextDeadlinesWidget tenders={tenders} warningDays={closingSoonWarningDays} />
+          <PriorityQueueWidget tenders={tenders} assignments={teamAssignments} outstandingChecklist={outstandingChecklistByTender} />
           {canManageSettings && <ClosingSoonSettingsCard currentDays={closingSoonWarningDays} />}
           <Card className="border-orange/30">
             <CardHeader>
@@ -375,15 +437,6 @@ export function TendersView({ tenders, checklist, canManage, workflowCounts, tea
             </CardBody>
           </Card>
 
-          <Card>
-            <CardBody className="flex items-center gap-3 py-4">
-              <Calendar className="w-5 h-5 text-orange shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-navy">Next deadline</p>
-                <p className="text-xs text-grey">Tshwane Metro Fleet — closes 12 Aug</p>
-              </div>
-            </CardBody>
-          </Card>
         </div>
       </div>
 
