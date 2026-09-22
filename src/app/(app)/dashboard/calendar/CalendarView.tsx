@@ -9,11 +9,13 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { buildMonthGrid, groupEventsByDate, MONTH_LABELS, WEEKDAY_LABELS } from "@/lib/calendar-core";
 import { createCalendarEventAction, deleteCalendarEventAction, syncOutlookCalendarAction } from "../calendar-actions";
 import type { CalendarEvent } from "@/lib/calendar";
+import type { SpecialDay } from "@/lib/holidays-core";
 
 export function CalendarView({
-  events, year, monthIndex0, todayISO,
+  events, specialDays, year, monthIndex0, todayISO,
 }: {
   events: CalendarEvent[];
+  specialDays: SpecialDay[];
   year: number;
   monthIndex0: number;
   todayISO: string;
@@ -27,7 +29,9 @@ export function CalendarView({
 
   const grid = buildMonthGrid(year, monthIndex0, todayISO);
   const byDate = groupEventsByDate(events);
+  const specialDaysByDate = groupEventsByDate(specialDays.map((d) => ({ ...d, eventDate: d.date })));
   const selectedEvents = (byDate.get(selectedDate) ?? []).slice().sort((a, b) => (a.eventTime ?? "").localeCompare(b.eventTime ?? ""));
+  const selectedSpecialDays = specialDaysByDate.get(selectedDate) ?? [];
 
   function handleSync() {
     setError(null);
@@ -83,15 +87,20 @@ export function CalendarView({
       <div className="grid grid-cols-7 gap-1">
         {grid.map((cell) => {
           const dayEvents = byDate.get(cell.date) ?? [];
+          const daySpecialDays = specialDaysByDate.get(cell.date) ?? [];
+          const isPublicHoliday = daySpecialDays.some((d) => d.kind === "public-holiday");
           return (
             <button
               key={cell.date}
               onClick={() => { setSelectedDate(cell.date); setAdding(false); }}
               className={`aspect-square sm:aspect-[4/3] rounded-lg border p-1.5 text-left transition-colors ${
-                selectedDate === cell.date ? "border-orange bg-orange/5" : "border-border hover:border-orange/50"
+                selectedDate === cell.date ? "border-orange bg-orange/5" : isPublicHoliday ? "border-orange/30 bg-orange/5" : "border-border hover:border-orange/50"
               } ${!cell.inCurrentMonth ? "opacity-40" : ""}`}
             >
               <p className={`text-xs font-semibold ${cell.isToday ? "text-orange" : "text-navy"}`}>{Number(cell.date.slice(8, 10))}</p>
+              {daySpecialDays.map((d) => (
+                <p key={d.name} className="text-[10px] text-orange truncate">{d.name}</p>
+              ))}
               {dayEvents.length > 0 && (
                 <p className="text-[10px] text-light-grey mt-0.5 truncate">{dayEvents.length} {dayEvents.length === 1 ? "event" : "events"}</p>
               )}
@@ -126,7 +135,17 @@ export function CalendarView({
             </form>
           )}
 
-          {selectedEvents.length === 0 && !adding && <p className="text-sm text-light-grey py-1">Nothing scheduled.</p>}
+          {selectedSpecialDays.map((d) => (
+            <div key={d.name} className="flex items-center gap-3 py-1.5 border-b border-border last:border-0">
+              <p className="text-xs font-semibold text-orange w-14 shrink-0">All day</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-orange">{d.name}</p>
+                <p className="text-xs text-light-grey">{d.kind === "public-holiday" ? "South African Public Holiday" : "International Day"}</p>
+              </div>
+            </div>
+          ))}
+
+          {selectedEvents.length === 0 && selectedSpecialDays.length === 0 && !adding && <p className="text-sm text-light-grey py-1">Nothing scheduled.</p>}
           {selectedEvents.map((e) => (
             <div key={e.id} className="flex items-center gap-3 py-1.5 border-b border-border last:border-0">
               <p className="text-xs font-semibold text-navy w-14 shrink-0">{e.eventTime ?? "All day"}</p>

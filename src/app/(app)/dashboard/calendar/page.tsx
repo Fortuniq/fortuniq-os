@@ -1,6 +1,7 @@
 import { requireModuleAccess } from "@/lib/permissions";
 import { getMyEventsInRange } from "@/lib/calendar";
 import { addMonths } from "@/lib/calendar-core";
+import { getSpecialDaysInRange } from "@/lib/holidays-core";
 import { CalendarView } from "./CalendarView";
 
 /**
@@ -28,7 +29,11 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const toISODate = `${next.year}-${String(next.monthIndex0 + 1).padStart(2, "0")}-28`;
 
   const events = await getMyEventsInRange(permissions, fromISODate, toISODate);
+  // South African public holidays + curated international observance
+  // days — computed on the fly for whatever months are in view, never
+  // stored per employee. See holidays-core.ts.
+  const specialDays = getSpecialDaysInRange(fromISODate, toISODate);
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  return <CalendarView events={events} year={year} monthIndex0={monthIndex0} todayISO={todayISO} />;
+  return <CalendarView events={events} specialDays={specialDays} year={year} monthIndex0={monthIndex0} todayISO={todayISO} />;
 }

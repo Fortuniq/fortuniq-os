@@ -444,6 +444,40 @@ resized away, or buried by personal layout choices.
   without confirmation") is honoured; the extra polish of a
   celebratory message is a small, easy follow-up.
 
+### Phase 10 — SA public holidays + international observance days (done)
+
+Automatically computed and merged into "My Calendar / Upcoming" and the
+full Personal Calendar — nothing to seed, nothing that drifts as
+employees join.
+
+- `src/lib/holidays-core.ts` — `computeEasterSunday()` (the standard
+  Anonymous Gregorian/Meeus algorithm), `getSouthAfricanPublicHolidays()`
+  (the 12 national holidays under the Public Holidays Act 36 of 1994 —
+  10 fixed dates plus Good Friday/Family Day from Easter — including the
+  Act's s.2(1) "Mondayisation" rule: a fixed-date holiday landing on a
+  Sunday adds an observed Monday), and `getInternationalObservances()` —
+  a **curated shortlist of ~30 well-known days** (Valentine's Day,
+  International Women's Day, Nelson Mandela International Day, World
+  Health Day, Mother's/Father's Day, etc.), deliberately not the full
+  ~150-day UN official list, per an explicit choice to keep the calendar
+  readable. Extending or trimming the list is a one-line edit to the two
+  arrays in that file — it's static, hand-maintained data, not fetched
+  from anywhere (same "real data, no external API" posture as Market
+  News).
+- **Deliberately not stored in `calendar_events`**: that table is
+  scoped per `employee_email`, so a holiday would need either one row
+  per employee (wasteful, drifts the moment someone new joins) or a
+  schema change. Instead these are computed fresh for whatever
+  year/date-range is being viewed and merged into the display only —
+  always correct, nothing to maintain.
+- Shown, clearly labelled and visually distinct (orange), on both the
+  dashboard's "My Calendar / Upcoming" preview (`dashboard-view.tsx`)
+  and the full month view (`calendar/CalendarView.tsx`) — read-only,
+  no delete button, since there's no real row behind them to delete.
+- **Not** included as My Focus Today candidates (a holiday isn't a work
+  objective) and **not** shown in the Daily Planner (time-blocking is
+  for work, not all-day observances).
+
 ## Known limitations / what wasn't built in this pass
 
 - Notifications are still company-wide/global (the `notifications`

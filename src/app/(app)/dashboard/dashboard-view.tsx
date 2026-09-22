@@ -31,6 +31,7 @@ import type { WorkflowItem, WorkflowHistoryEntry } from "@/lib/workflow-core";
 import type { PersonalNote } from "@/lib/notes-core";
 import type { EmployeeFocus, FocusCandidate } from "@/lib/focus-core";
 import type { PlannerBlock } from "@/lib/planner-core";
+import type { SpecialDay } from "@/lib/holidays-core";
 
 type ExpiringDoc = { id: string; name: string; category: string; expiryDate: string; status: string };
 
@@ -71,6 +72,7 @@ type DashboardProps = {
   directReports: { email: string; name: string }[];
   todayISO: string;
   dailyPlannerBlocks: PlannerBlock[];
+  upcomingSpecialDays: SpecialDay[];
   hasBroadVisibility: boolean;
   orgStats: { total: number; overdue: number } | null;
   salesTrend: { month: string; sales: number }[] | null;
@@ -100,8 +102,16 @@ function eventDayLabel(dateStr: string): string {
 
 export function DashboardView({
   firstName, role, fuelPrices, myTasks, companyTasks, personalTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowItems, workflowHistory,
-  moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, myNotes, activeFocus, focusResetPrompt, focusRecommendation, focusCandidates, directReports, todayISO, dailyPlannerBlocks, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
+  moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, myNotes, activeFocus, focusResetPrompt, focusRecommendation, focusCandidates, directReports, todayISO, dailyPlannerBlocks, upcomingSpecialDays, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
+  // Merges real calendar events with computed public holidays/
+  // international observance days for the "My Calendar / Upcoming"
+  // preview — see holidays-core.ts. Special days have no time (they're
+  // all-day) and no record to open.
+  const upcomingCombined = [
+    ...myEvents.map((e) => ({ date: e.eventDate, time: e.eventTime, title: e.title, sub: e.eventType, url: e.recordUrl as string | null, isSpecialDay: false })),
+    ...upcomingSpecialDays.map((d) => ({ date: d.date, time: null as string | null, title: d.name, sub: d.kind === "public-holiday" ? "Public Holiday" : "International Day", url: null as string | null, isSpecialDay: true })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? ""));
   return (
     <div>
       <PageHeader
@@ -153,22 +163,22 @@ export function DashboardView({
             </Link>
           </CardHeader>
           <CardBody className="space-y-1">
-            {myEvents.length === 0 && <p className="text-sm text-light-grey py-2">Nothing scheduled in the next two weeks.</p>}
-            {myEvents.slice(0, 6).map((e) => (
-              <div key={e.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
+            {upcomingCombined.length === 0 && <p className="text-sm text-light-grey py-2">Nothing scheduled in the next two weeks.</p>}
+            {upcomingCombined.slice(0, 6).map((e, i) => (
+              <div key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
                 <div className="w-20 shrink-0">
-                  <p className="text-xs font-semibold text-navy">{eventDayLabel(e.eventDate)}</p>
-                  {e.eventTime && <p className="text-xs text-light-grey">{e.eventTime}</p>}
+                  <p className="text-xs font-semibold text-navy">{eventDayLabel(e.date)}</p>
+                  {e.time && <p className="text-xs text-light-grey">{e.time}</p>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  {e.recordUrl ? (
-                    <a href={e.recordUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-navy hover:text-orange transition-colors">
+                  {e.url ? (
+                    <a href={e.url} target="_blank" rel="noopener noreferrer" className="text-sm text-navy hover:text-orange transition-colors">
                       {e.title}
                     </a>
                   ) : (
-                    <p className="text-sm text-navy">{e.title}</p>
+                    <p className={`text-sm ${e.isSpecialDay ? "text-orange" : "text-navy"}`}>{e.title}</p>
                   )}
-                  <p className="text-xs text-light-grey">{e.eventType}</p>
+                  <p className="text-xs text-light-grey">{e.sub}</p>
                 </div>
               </div>
             ))}

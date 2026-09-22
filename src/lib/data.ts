@@ -20,6 +20,7 @@ import { getMyNotes } from "@/lib/notes-data";
 import { getMyActiveFocus, getMyDirectReports } from "@/lib/focus-data";
 import { needsDailyResetPrompt, recommendFocus, type FocusCandidate, type FocusModule } from "@/lib/focus-core";
 import type { PlannerBlock } from "@/lib/planner-core";
+import { getSpecialDaysInRange } from "@/lib/holidays-core";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -779,6 +780,13 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
       source: e.source,
     }));
 
+  // South African public holidays + a curated list of international
+  // observance days — computed on the fly (never stored per-employee;
+  // see holidays-core.ts), merged into "My Calendar / Upcoming" here and
+  // into the full Personal Calendar page separately (calendar/page.tsx).
+  const upcomingUntilISO = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+  const upcomingSpecialDays = getSpecialDaysInRange(todayISO, upcomingUntilISO);
+
   // "My Workflow": counts of open tasks grouped by the module they came
   // from — reuses the same unified task layer rather than a separate
   // workflow-summary system, per the brief's explicit instruction to
@@ -870,6 +878,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     directReports,
     todayISO,
     dailyPlannerBlocks,
+    upcomingSpecialDays,
     availableWidgetKeys,
     dashboardLayout,
   };
