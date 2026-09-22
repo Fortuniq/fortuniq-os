@@ -219,13 +219,46 @@ published, from day one.
 
 See "Company vs Personal split (Project ORION)" above.
 
+### Phase 4 — My Workflow redesign (done)
+
+Per the brief: "show current workflow/stage/owner/progress/due date, a
+'Continue Working' button, and recent workflow history." Built entirely
+on the existing unified task layer, not a new tracking system — a
+"workflow item" is simply an open Company task that carries a
+`workflow_stage` (see `src/lib/workflow-core.ts`):
+
+- `pickCurrentWorkflowItemsByModule()` — one item per module you have
+  live workflow work in (the most urgent open task: soonest due date,
+  then highest priority), each shown with its stage, due date, owner
+  ("You" — My Tasks/My Workflow are always the signed-in person's own,
+  by design), and a "Continue Working" button linking to
+  `recordUrl` (falling back to the module's own page if a task has
+  none).
+- **Progress bar**: only shown where this app actually has an ordered
+  stage sequence to compute a fraction from — today, only Tenders
+  (`TENDER_WORKFLOW_STAGE_ORDER` in `tender-core.ts`). Every other
+  module's workflow item shows its stage as text with no progress bar,
+  rather than fabricating a percentage — same "never invent a number"
+  principle as `tender-core.ts`'s own `ComplianceResult`. Extending
+  progress bars to another module just means giving that module an
+  ordered stage list and adding one branch to
+  `computeStageProgressPct()`.
+- **Recent workflow history**: the last 5 completed Company/workflow
+  tasks for the signed-in employee (`getMyRecentlyCompletedWorkflowTasks()`
+  in `tasks.ts` — a small, separate, explicit query, so every other
+  caller of `getMyTasks()` keeps only ever seeing open work).
+- The old counts-by-module view (a bare "3 items" link per module) is
+  gone from this widget — that information now lives, as it always
+  did, in the "Relevant module cards" grid further down the dashboard
+  (`moduleCards`, computed from the same `workflowByModule` counts,
+  unchanged).
+
 ### What's next
 
-My Workflow redesign, My Notes, Daily Planner, Personal Calendar
-redesign, Outlook Calendar two-way sync (blocked on an explicit
-decision to request the new `Calendars` Microsoft Graph scope — not
-added unilaterally, since every employee would see a new consent
-prompt), and My Focus Today.
+My Notes, Daily Planner, Personal Calendar redesign, Outlook Calendar
+two-way sync (blocked on an explicit decision to request the new
+`Calendars` Microsoft Graph scope — not added unilaterally, since
+every employee would see a new consent prompt), and My Focus Today.
 
 ## Known limitations / what wasn't built in this pass
 

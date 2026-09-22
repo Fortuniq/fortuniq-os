@@ -24,6 +24,7 @@ import type { CalendarEvent } from "@/lib/calendar";
 import type { AttendanceRecord } from "@/lib/attendance-core";
 import type { DashboardWidgetLayoutEntry } from "@/lib/dashboard-widgets";
 import type { MarketNewsArticle } from "@/lib/market-news-core";
+import type { WorkflowItem, WorkflowHistoryEntry } from "@/lib/workflow-core";
 
 type ExpiringDoc = { id: string; name: string; category: string; expiryDate: string; status: string };
 
@@ -50,6 +51,8 @@ type DashboardProps = {
     isWorkAnniversaryToday: boolean;
   };
   workflowByModule: Record<string, number>;
+  workflowItems: WorkflowItem[];
+  workflowHistory: WorkflowHistoryEntry[];
   moduleCards: { key: string; label: string; href: string; taskCount: number }[];
   dashboardLayout: DashboardWidgetLayoutEntry[];
   marketNewsArticles: MarketNewsArticle[];
@@ -82,7 +85,7 @@ function eventDayLabel(dateStr: string): string {
 }
 
 export function DashboardView({
-  firstName, role, fuelPrices, myTasks, companyTasks, personalTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowByModule,
+  firstName, role, fuelPrices, myTasks, companyTasks, personalTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowItems, workflowHistory,
   moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   return (
@@ -145,7 +148,7 @@ export function DashboardView({
         initialLayout={dashboardLayout}
         content={{
           myTasks: <MyTasksCard companyTasks={companyTasks} personalTasks={personalTasks} />,
-          myWorkflow: <MyWorkflowCard workflowByModule={workflowByModule} moduleCards={moduleCards} />,
+          myWorkflow: <MyWorkflowCard workflowItems={workflowItems} workflowHistory={workflowHistory} moduleCards={moduleCards} />,
           attendanceHistory: <MyAttendanceHistory records={attendanceHistory} />,
           documentExpiry: <DocumentExpiryCard documents={expiringDocuments} />,
           hcmReminders: <HCMRemindersCard reminders={hcmReminders} isHR={role === "HR/Admin" || hasBroadVisibility} />,

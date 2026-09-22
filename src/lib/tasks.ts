@@ -89,6 +89,34 @@ export async function getMyTasks(permissions: UserPermissions): Promise<MyTask[]
 }
 
 /**
+ * Recently completed Company/workflow tasks for the signed-in employee
+ * — feeds the redesigned "My Workflow" widget's history list (Project
+ * ORION). A separate, small, explicit query rather than widening
+ * getMyTasks() itself, since every other caller of getMyTasks()
+ * deliberately wants only OPEN work (see its own `.neq("status",
+ * "Completed")` above) and should never silently start receiving
+ * completed rows too.
+ */
+export async function getMyRecentlyCompletedWorkflowTasks(employeeEmail: string, limit = 5): Promise<MyTask[]> {
+  if (!supabaseConfigured || !employeeEmail) return [];
+  try {
+    const supabase = createServiceClient();
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("employee_email", employeeEmail.toLowerCase())
+      .eq("status", "Completed")
+      .not("workflow_stage", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data.map(mapRow);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Creates a task tied to a specific module record — the mechanism the
  * brief calls "workflow-generated tasks." Other modules' server actions
  * call this instead of maintaining their own separate task system (see

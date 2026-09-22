@@ -2,7 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import * as mock from "@/lib/mock-data";
 import { calculateCompliancePct, isStageOverdue } from "@/lib/tender-core";
 import { hasModuleAccess, type UserPermissions } from "@/lib/permissions";
-import { getMyTasks, getOrganisationTaskStats } from "@/lib/tasks";
+import { getMyTasks, getOrganisationTaskStats, getMyRecentlyCompletedWorkflowTasks } from "@/lib/tasks";
 import { getMyUpcomingEvents } from "@/lib/calendar";
 import { getTodayAttendance, getMyAttendanceHistory } from "@/lib/attendance";
 import { groupMyTasks, splitTasksByType, sortPersonalTasks } from "@/lib/tasks-core";
@@ -15,6 +15,7 @@ import { mergeDashboardLayout, type DashboardWidgetKey } from "@/lib/dashboard-w
 import { getDashboardLayout } from "@/lib/dashboard-layout-data";
 import { getPublishedMarketNews } from "@/lib/market-news-data";
 import { checkPermissionAction } from "@/lib/rbac";
+import { pickCurrentWorkflowItemsByModule, buildWorkflowHistory } from "@/lib/workflow-core";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -656,7 +657,7 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews, recentlyCompletedWorkflowTasks] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
@@ -669,6 +670,8 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     // creating/editing is restricted). See market-news-data.ts.
     getPublishedMarketNews(8),
     checkPermissionAction(permissions, "market-news", "Manage"),
+    // Feeds the redesigned My Workflow widget's history list.
+    permissions.email ? getMyRecentlyCompletedWorkflowTasks(permissions.email, 5) : Promise.resolve([]),
   ]);
 
   // HCM Phase 3 dashboard reminders — see docs/HCM_PHASE3.md, "Dashboard."
@@ -703,6 +706,12 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
   // Personal tasks display in the employee's own chosen order, not the
   // due-date-driven order sortMyTasks() already applied above.
   const personalTasks = sortPersonalTasks(split.personalTasks);
+
+  // Redesigned My Workflow widget (Project ORION): one current item per
+  // module you have live workflow work in, plus recent history — see
+  // workflow-core.ts.
+  const workflowItems = pickCurrentWorkflowItemsByModule(companyTasks);
+  const workflowHistory = buildWorkflowHistory(recentlyCompletedWorkflowTasks);
 
   // "My Workflow": counts of open tasks grouped by the module they came
   // from — reuses the same unified task layer rather than a separate
@@ -774,6 +783,8 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
       stage: a.stage, dueDate: a.dueDate, priority: a.priority, overdue: isStageOverdue(a),
     })),
     workflowByModule: Object.fromEntries(workflowByModule),
+    workflowItems,
+    workflowHistory,
     moduleCards,
     hasBroadVisibility,
     orgStats,
