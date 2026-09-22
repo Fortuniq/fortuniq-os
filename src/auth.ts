@@ -37,6 +37,13 @@ const SCOPES = [
   // real, visible change to everyone's sign-in experience, not just an
   // internal one.
   "Tasks.ReadWrite",
+  // Added for Outlook Calendar two-way sync (Project ORION — see
+  // docs/EMPLOYEE_DASHBOARD.md). Explicitly confirmed before adding:
+  // every person who signs in after this deploys will see a new
+  // Microsoft consent prompt. ReadWrite (not just .Read) because sync
+  // is two-way — FortunIQ-created events are pushed to Outlook, not
+  // just Outlook events pulled in.
+  "Calendars.ReadWrite",
 ].join(" ");
 
 type JWTWithGraphToken = {

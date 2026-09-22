@@ -856,3 +856,90 @@ export async function completePlannerTask(accessToken: string, plannerTaskId: st
     throw new GraphError(`Couldn't complete Planner task: ${patchRes.status} ${body}`, patchRes.status);
   }
 }
+
+// ---------------------------------------------------------------------
+// Outlook Calendar (two-way sync) — Project ORION. Requires the
+// Calendars.ReadWrite scope (src/auth.ts). See src/lib/calendar.ts for
+// how this is merged with FortunIQ OS's own calendar_events, and
+// docs/EMPLOYEE_DASHBOARD.md for the sync design.
+// ---------------------------------------------------------------------
+
+export type OutlookEvent = {
+  id: string;
+  subject: string;
+  start: string; // ISO datetime
+  end: string; // ISO datetime
+  isAllDay: boolean;
+  webLink: string;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapOutlookEvent(raw: any): OutlookEvent {
+  return {
+    id: raw.id,
+    subject: raw.subject ?? "(No title)",
+    start: raw.start?.dateTime ?? raw.start,
+    end: raw.end?.dateTime ?? raw.end,
+    isAllDay: !!raw.isAllDay,
+    webLink: raw.webLink ?? "",
+  };
+}
+
+/** Pulls the signed-in person's own Outlook events in a date window (ISO dates, inclusive). Used to merge into getMyUpcomingEvents(). */
+export async function getOutlookEvents(accessToken: string, fromISODate: string, toISODate: string): Promise<OutlookEvent[]> {
+  const startDateTime = `${fromISODate}T00:00:00`;
+  const endDateTime = `${toISODate}T23:59:59`;
+  const data = await graphFetch(
+    `/me/calendarView?startDateTime=${encodeURIComponent(startDateTime)}&endDateTime=${encodeURIComponent(endDateTime)}&$orderby=start/dateTime&$top=100`,
+    accessToken
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data.value ?? []) as any[]).map(mapOutlookEvent);
+}
+
+/** Pushes a FortunIQ-created calendar entry into the person's own Outlook calendar. Returns the new Outlook event id to store as outlook_event_id. */
+export async function createOutlookEvent(
+  accessToken: string,
+  event: { subject: string; startISO: string; endISO: string; isAllDay?: boolean }
+): Promise<string> {
+  const data = await graphFetch(`/me/events`, accessToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      subject: event.subject,
+      isAllDay: !!event.isAllDay,
+      start: { dateTime: event.startISO, timeZone: "Africa/Johannesburg" },
+      end: { dateTime: event.endISO, timeZone: "Africa/Johannesburg" },
+    }),
+  });
+  return data.id as string;
+}
+
+/** Updates an Outlook event previously created by createOutlookEvent (or matched by outlook_event_id from a pulled event). */
+export async function updateOutlookEvent(
+  accessToken: string,
+  outlookEventId: string,
+  event: { subject?: string; startISO?: string; endISO?: string }
+): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (event.subject) body.subject = event.subject;
+  if (event.startISO) body.start = { dateTime: event.startISO, timeZone: "Africa/Johannesburg" };
+  if (event.endISO) body.end = { dateTime: event.endISO, timeZone: "Africa/Johannesburg" };
+  await graphFetch(`/me/events/${outlookEventId}`, accessToken, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Deletes an Outlook event — called when the linked FortunIQ OS calendar entry is deleted. Best-effort: a 404 (already gone from Outlook) is not an error here. */
+export async function deleteOutlookEvent(accessToken: string, outlookEventId: string): Promise<void> {
+  const res = await fetch(`${GRAPH_BASE}/me/events/${outlookEventId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok && res.status !== 404 && res.status !== 204) {
+    const body = await res.text();
+    throw new GraphError(`Couldn't delete Outlook event: ${res.status} ${body}`, res.status);
+  }
+}

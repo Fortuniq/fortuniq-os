@@ -17,6 +17,9 @@ import { getPublishedMarketNews } from "@/lib/market-news-data";
 import { checkPermissionAction } from "@/lib/rbac";
 import { pickCurrentWorkflowItemsByModule, buildWorkflowHistory } from "@/lib/workflow-core";
 import { getMyNotes } from "@/lib/notes-data";
+import { getMyActiveFocus, getMyDirectReports } from "@/lib/focus-data";
+import { needsDailyResetPrompt, recommendFocus, type FocusCandidate, type FocusModule } from "@/lib/focus-core";
+import type { PlannerBlock } from "@/lib/planner-core";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -658,7 +661,7 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews, recentlyCompletedWorkflowTasks, myNotes] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews, recentlyCompletedWorkflowTasks, myNotes, activeFocus, directReports] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
@@ -674,6 +677,10 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     // Feeds the redesigned My Workflow widget's history list.
     permissions.email ? getMyRecentlyCompletedWorkflowTasks(permissions.email, 5) : Promise.resolve([]),
     permissions.email ? getMyNotes(permissions.email) : Promise.resolve([]),
+    // My Focus Today (Project ORION) — the employee's current single
+    // active focus, if any. See focus-core.ts/focus-data.ts.
+    permissions.email ? getMyActiveFocus(permissions.email) : Promise.resolve(null),
+    permissions.email ? getMyDirectReports(permissions.email) : Promise.resolve([]),
   ]);
 
   // HCM Phase 3 dashboard reminders — see docs/HCM_PHASE3.md, "Dashboard."
@@ -714,6 +721,63 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
   // workflow-core.ts.
   const workflowItems = pickCurrentWorkflowItemsByModule(companyTasks);
   const workflowHistory = buildWorkflowHistory(recentlyCompletedWorkflowTasks);
+
+  // My Focus Today (Project ORION). Candidates are assembled entirely
+  // from data already fetched above for other widgets — nothing new is
+  // queried just for this. This is also how "Set as My Focus" reaches
+  // Tenders/Tasks/Calendar items today: through My Tasks/My Workflow/
+  // Calendar, not a bespoke button on every module's own detail page —
+  // see docs/EMPLOYEE_DASHBOARD.md, "My Focus Today," for that scope
+  // decision and what a follow-up would add.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const FOCUS_MODULE_SET = new Set<FocusModule>(["tenders", "finance", "tasks", "calendar", "academy"]);
+  const openCompanyAndPersonalTasks = myTasks.filter((t) => t.status !== "Completed");
+  const focusCandidates: FocusCandidate[] = [
+    ...openCompanyAndPersonalTasks.map((t) => ({
+      key: `task:${t.id}`,
+      title: t.title,
+      moduleKey: (t.moduleKey && FOCUS_MODULE_SET.has(t.moduleKey as FocusModule) ? (t.moduleKey as FocusModule) : t.taskType === "Personal" ? "tasks" as const : null),
+      relatedLabel: t.moduleKey ?? null,
+      relatedUrl: t.recordUrl,
+      workflowStage: t.workflowStage,
+      priority: typeof t.priority === "string" ? t.priority : null,
+      dueDate: t.dueDate,
+      isOverdue: t.status === "Overdue" || (!!t.dueDate && t.dueDate < todayISO),
+      isMeeting: false,
+    })),
+    ...myEvents
+      .filter((e) => e.eventDate === todayISO)
+      .map((e) => ({
+        key: `event:${e.id}`,
+        title: e.title,
+        moduleKey: "calendar" as const,
+        relatedLabel: e.eventType,
+        relatedUrl: e.recordUrl,
+        workflowStage: null,
+        priority: null,
+        dueDate: e.eventDate,
+        isOverdue: false,
+        isMeeting: true,
+      })),
+  ];
+  const focusRecommendation = activeFocus ? null : recommendFocus(focusCandidates, todayISO);
+  const focusResetPrompt = needsDailyResetPrompt(activeFocus, todayISO) ? activeFocus : null;
+
+  // Daily Planner (Project ORION) — today's time-blocked calendar
+  // entries (duration_minutes set), reusing myEvents rather than a
+  // second query. See planner-core.ts.
+  const dailyPlannerBlocks: PlannerBlock[] = myEvents
+    .filter((e) => e.eventDate === todayISO && e.durationMinutes !== null)
+    .map((e) => ({
+      id: e.id,
+      title: e.title,
+      startTime: e.eventTime ?? "09:00",
+      durationMinutes: e.durationMinutes as number,
+      category: e.blockCategory ?? "Task",
+      recordUrl: e.recordUrl,
+      moduleKey: e.moduleKey,
+      source: e.source,
+    }));
 
   // "My Workflow": counts of open tasks grouped by the module they came
   // from — reuses the same unified task layer rather than a separate
@@ -758,6 +822,9 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     "myTasks",
     "myWorkflow",
     "myNotes",
+    // Always available, same reasoning as myNotes — an empty Daily
+    // Planner is itself the "add your first block" entry point.
+    "dailyPlanner",
     ...(attendanceHistory.length > 0 ? (["attendanceHistory"] as const) : []),
     ...(expiringDocuments.some((d) => isExpired(d.expiryDate) || isExpiringSoon(d.expiryDate)) ? (["documentExpiry"] as const) : []),
     ...(hcmHasAnything ? (["hcmReminders"] as const) : []),
@@ -796,6 +863,13 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     marketNewsArticles,
     canManageMarketNews,
     myNotes,
+    activeFocus,
+    focusResetPrompt,
+    focusRecommendation,
+    focusCandidates,
+    directReports,
+    todayISO,
+    dailyPlannerBlocks,
     availableWidgetKeys,
     dashboardLayout,
   };

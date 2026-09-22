@@ -291,12 +291,158 @@ notes anywhere in this feature.
   so hiding it until content exists would hide the only way to create
   that content. Documented inline in `dashboard-widgets.ts`.
 
-### What's next
+### Phase 6 — Outlook Calendar two-way sync (done)
 
-Daily Planner, Personal Calendar redesign, Outlook Calendar two-way
-sync (blocked on an explicit decision to request the new `Calendars`
-Microsoft Graph scope — not added unilaterally, since every employee
-would see a new consent prompt), and My Focus Today.
+`Calendars.ReadWrite` added to `src/auth.ts`'s requested scopes —
+**explicitly confirmed before adding**, since every employee sees a new
+Microsoft consent prompt the next time they sign in after this deploys.
+
+- `src/lib/graph.ts` — `getOutlookEvents()` / `createOutlookEvent()` /
+  `updateOutlookEvent()` / `deleteOutlookEvent()`, same
+  per-signed-in-user access-token pattern as every other Graph call in
+  this file (never a shared app credential).
+- `src/lib/calendar.ts`'s `syncOutlookCalendar(accessToken, employeeEmail)`
+  — run on-demand (a "Sync with Outlook" button on the calendar page,
+  or automatically whenever the calendar page loads), not as a
+  scheduled job, since this Netlify/Next.js deployment has no
+  background worker to run one from. Two directions:
+  1. **Push** — any FortunIQ-sourced event with no `outlook_event_id`
+     yet is created in Outlook and stamped with the id Graph returns.
+  2. **Pull** — Outlook events in the sync window not already mirrored
+     locally (matched by `outlook_event_id`) are inserted as
+     `source='outlook'` rows, and from then on render identically to
+     FortunIQ ones (`getMyUpcomingEvents()` needed no change).
+  Deliberately does **not** detect or replay Outlook-side deletions —
+  diffing the full remote set on every load was judged not worth the
+  extra Graph calls for v1. A documented limitation, not a bug: a
+  person who deletes a synced Outlook event will still see it in
+  FortunIQ OS until they delete it there too.
+- `supabase/migration_v33_calendar_planner_outlook.sql` — adds
+  `updated_at`/`last_synced_at` to `calendar_events` (the `source`/
+  `outlook_event_id` columns already existed, unused, since
+  migration_v16).
+
+### Phase 7 — Daily Planner (done)
+
+Deliberately built on **top of** `calendar_events`, not a new table —
+a "time block" is just a calendar event that also carries a duration
+and a category (Deep Work/Meeting/Task/Break/Personal). This means
+every planner block automatically gets Outlook two-way sync for free,
+which is how "optional Outlook sync" from the brief is satisfied
+without a second Graph integration (the brief said "Outlook Tasks
+sync" specifically; this app doesn't have a Microsoft To Do/Tasks
+integration, and building one would need yet another Graph scope — a
+planner block syncing as a normal timed Outlook Calendar event was
+judged the more useful, lower-friction interpretation).
+
+- `src/lib/planner-core.ts` — `validatePlannerBlockInput()`,
+  `sortBlocksByTime()`, `findOverlappingBlocks()` (advisory only — two
+  things genuinely can overlap in a day; this never blocks a save),
+  `totalPlannedMinutes()`.
+- `src/app/(app)/dashboard/DailyPlannerCard.tsx` — today's blocks,
+  native HTML5 drag-and-drop to retime a block by dropping it onto
+  another (same no-new-dependency choice as every other reorderable
+  list in this app), quick-add form, overlap warnings highlighted
+  inline.
+- A customizable "personal productivity" widget like My Notes —
+  always available (see `dashboard-widgets.ts`), since an empty
+  planner is the "add your first block" entry point.
+
+### Phase 8 — Personal Calendar redesign (done)
+
+A full interactive month view at `/dashboard/calendar`, internal-first
+(works completely with zero Outlook connection — Outlook events just
+appear once synced). Reached from the dashboard's "My Calendar /
+Upcoming" preview via "Open full calendar."
+
+- `src/lib/calendar-core.ts` — pure logic: `buildMonthGrid()` (a full
+  6-week/42-day grid including the leading/trailing days from adjacent
+  months, so every week row is complete), `groupEventsByDate()`,
+  `addMonths()`.
+- `src/lib/calendar.ts` — `getMyEventsInRange()` (an arbitrary date
+  window, not just "next N days" like `getMyUpcomingEvents()`),
+  `createCalendarEvent()` / `updateCalendarEvent()` /
+  `deleteCalendarEvent()`, all ownership-scoped like every other
+  personal-data write in this app.
+- `src/app/(app)/dashboard/calendar/CalendarView.tsx` — month grid,
+  click a day to see/add/delete its events, month navigation via URL
+  search params (`?y=&m=`), and the "Sync with Outlook" button.
+- Deleting a FortunIQ-sourced event that was synced to Outlook also
+  best-effort deletes the Outlook copy (`calendar-actions.ts`) — a
+  Graph failure there never blocks the local delete that already
+  happened.
+
+### Phase 9 — My Focus Today (done)
+
+Built exactly to the detailed brief provided for this feature. **Not**
+another task list — it answers one question ("what's the single most
+important thing today?") and highlights one real work item that still
+lives in My Tasks/My Workflow/Calendar/Tenders/Finance. Rendered
+**pinned above the customizable widget grid**, same treatment as
+Attendance, because the brief calls it "one of the main features of
+the dashboard" — unlike every other ORION widget, it can't be hidden,
+resized away, or buried by personal layout choices.
+
+- `src/lib/focus-core.ts` — `EmployeeFocus`/`FocusCandidate` types,
+  `validateFocusInput()`, `scoreFocusCandidate()` /
+  `recommendFocus()` — **"FortunIQ Intelligence"** is a deterministic,
+  explainable scoring rule (overdue work scores highest, then closer
+  due dates, then priority, then a same-day meeting nudge), built
+  entirely from fields already on candidates the dashboard had already
+  fetched for other widgets — no external AI/LLM call and no new data
+  source, same "real logic now, no placeholder" posture used for
+  Market News's `source` field. `needsDailyResetPrompt()` — the "never
+  silently discard unfinished work" rule from the brief.
+- `supabase/migration_v34_employee_focus.sql` — `employee_focus`
+  table, one row per focus ever held (active or historical). A partial
+  unique index (`is_active` where true) backstops the "only ONE active
+  focus" rule that application code (`focus-data.ts`'s `setFocus()`,
+  which deactivates any current active row before inserting) already
+  enforces.
+- `src/lib/focus-data.ts` — `getMyActiveFocus()`, `setFocus()`
+  (source: Employee/Intelligence/Manager), `carryForwardFocus()` ("Continue
+  Yesterday's Focus"), `updateFocusProgress()`, `deactivateFocus()`
+  ("Change Focus"), and `getMyDirectReports()` — **reuses the existing
+  `employees.manager_id` relationship** (already powering
+  `managerName` in the Employee Hub directory) for "who is this
+  person's manager," rather than inventing a second reporting-line
+  concept just for this feature.
+- `src/app/(app)/dashboard/focus-actions.ts` — server actions for all
+  of the above, plus `assignFocusToReportAction()` (Manager Assigned),
+  which checks the target really is a direct report of the caller
+  before writing anything.
+- `src/app/(app)/dashboard/MyFocusCard.tsx` — every state from the
+  brief: the daily-reset prompt, "no focus yet" (recommendation +
+  manual picker), the full active-focus display (all the brief's
+  fields — Objective/Module/Related item/Stage/Priority/Due
+  Date/Days Remaining/Progress/Est. Time/Assigned By/Last Activity —
+  plus Continue/Update Progress/Change Focus), and a compact "Assign a
+  focus to your team" section shown only to people who actually have
+  direct reports.
+- **Candidates, and where "Set as My Focus" lives**: rather than
+  adding a bespoke "Set as My Focus" button to every module's own
+  detail page (Tender Workspace, a Quotation, an Invoice, a Course —
+  each a separate file this pass didn't touch), the brief's "any
+  eligible task, tender, workflow stage, quotation, invoice, meeting
+  prep item or personal task" is surfaced through the Focus card's own
+  picker, built from the same My Tasks/My Workflow/Calendar data
+  already flowing through the dashboard (`data.ts`'s
+  `focusCandidates`). Every open Company task, Personal task, and
+  today's calendar events are eligible; since Tenders/Finance work
+  already reaches My Tasks via `createTaskForEmployee()` (see "My
+  Tasks — how it avoids becoming a second task system," above), this
+  covers the brief's examples without a second integration point.
+  Academy and a dedicated Finance quotation/invoice picker are the
+  natural next follow-on once those modules also call
+  `createTaskForEmployee()` the way Tenders does.
+- **Known limitation**: the "When completed" success moment is the
+  card's own state transition (a completed focus deactivates, and the
+  card falls back to "no active focus" — recommendation/picker — which
+  can only be reached by the employee's own next choice, never
+  automatically) rather than a distinct toast/success banner. The
+  substance of the brief ("never automatically select another item
+  without confirmation") is honoured; the extra polish of a
+  celebratory message is a small, easy follow-up.
 
 ## Known limitations / what wasn't built in this pass
 
@@ -309,3 +455,17 @@ would see a new consent prompt), and My Focus Today.
 - No dedicated "My Tasks" full-list page yet — the dashboard shows the
   top 8 open tasks; a full list/filter page would be a small follow-up
   using the same `getMyTasks()` function.
+- Outlook sync doesn't detect deletions made on the Outlook side (see
+  Phase 6) — only new/changed events are pulled in.
+- Daily Planner blocks and Personal Calendar events are `today`/window
+  scoped from the same `calendar_events` rows My Tasks-generated
+  deadlines also use; a block dragged onto another block's time slot
+  swaps times one-directionally (the dropped block takes the target's
+  start time) rather than a full swap — simplest correct behaviour for
+  v1, matching this app's general "no more than the brief asks for"
+  discipline.
+- My Focus Today's "Manager Assigned" source only offers direct
+  reports (`employees.manager_id`) — there's no way today for a
+  manager to assign a focus to someone outside their direct line
+  (e.g. a cross-functional project lead), matching how the rest of
+  FortunIQ OS doesn't yet model matrixed reporting.

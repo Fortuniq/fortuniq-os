@@ -29,10 +29,11 @@ export type DashboardWidgetKey =
   | "myTenderTasks"
   | "fuelPrices"
   | "marketNews"
-  | "myNotes";
+  | "myNotes"
+  | "dailyPlanner";
 
 export const ALL_DASHBOARD_WIDGET_KEYS: DashboardWidgetKey[] = [
-  "myTasks", "myWorkflow", "attendanceHistory", "documentExpiry", "hcmReminders", "myTenderTasks", "fuelPrices", "marketNews", "myNotes",
+  "myTasks", "myWorkflow", "attendanceHistory", "documentExpiry", "hcmReminders", "myTenderTasks", "fuelPrices", "marketNews", "myNotes", "dailyPlanner",
 ];
 
 function isDashboardWidgetKey(value: unknown): value is DashboardWidgetKey {
@@ -77,6 +78,12 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetDefinition[] = [
   // content — an empty notes widget IS the "add your first note" entry
   // point, so it can never be hidden until someone already has a note.
   { key: "myNotes", label: "My Notes", defaultVisible: true, defaultSize: "standard", defaultOrder: 8 },
+  // Always available, same reasoning as myNotes. NOT the same thing as
+  // My Focus Today — Focus Today is pinned outside this system entirely
+  // (see dashboard-view.tsx) since the brief wants it unmissable; the
+  // Daily Planner is an ordinary customizable "personal productivity"
+  // widget like everything else here.
+  { key: "dailyPlanner", label: "Daily Planner", defaultVisible: true, defaultSize: "standard", defaultOrder: 9 },
 ];
 
 const REGISTRY_BY_KEY = new Map(DASHBOARD_WIDGET_REGISTRY.map((w) => [w.key, w]));

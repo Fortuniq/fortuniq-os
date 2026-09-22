@@ -19,6 +19,8 @@ import { MyTenderTasksCard } from "./MyTenderTasksCard";
 import { FuelPricesCard } from "./FuelPricesCard";
 import { MarketNewsCard } from "./MarketNewsCard";
 import { MyNotesCard } from "./MyNotesCard";
+import { MyFocusCard } from "./MyFocusCard";
+import { DailyPlannerCard } from "./DailyPlannerCard";
 import { CustomizableDashboardGrid } from "./CustomizableDashboardGrid";
 import type { MyTask, TaskGroups } from "@/lib/tasks-core";
 import type { CalendarEvent } from "@/lib/calendar";
@@ -27,6 +29,8 @@ import type { DashboardWidgetLayoutEntry } from "@/lib/dashboard-widgets";
 import type { MarketNewsArticle } from "@/lib/market-news-core";
 import type { WorkflowItem, WorkflowHistoryEntry } from "@/lib/workflow-core";
 import type { PersonalNote } from "@/lib/notes-core";
+import type { EmployeeFocus, FocusCandidate } from "@/lib/focus-core";
+import type { PlannerBlock } from "@/lib/planner-core";
 
 type ExpiringDoc = { id: string; name: string; category: string; expiryDate: string; status: string };
 
@@ -60,6 +64,13 @@ type DashboardProps = {
   marketNewsArticles: MarketNewsArticle[];
   canManageMarketNews: boolean;
   myNotes: PersonalNote[];
+  activeFocus: EmployeeFocus | null;
+  focusResetPrompt: EmployeeFocus | null;
+  focusRecommendation: FocusCandidate | null;
+  focusCandidates: FocusCandidate[];
+  directReports: { email: string; name: string }[];
+  todayISO: string;
+  dailyPlannerBlocks: PlannerBlock[];
   hasBroadVisibility: boolean;
   orgStats: { total: number; overdue: number } | null;
   salesTrend: { month: string; sales: number }[] | null;
@@ -89,7 +100,7 @@ function eventDayLabel(dateStr: string): string {
 
 export function DashboardView({
   firstName, role, fuelPrices, myTasks, companyTasks, personalTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowItems, workflowHistory,
-  moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, myNotes, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
+  moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, myNotes, activeFocus, focusResetPrompt, focusRecommendation, focusCandidates, directReports, todayISO, dailyPlannerBlocks, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   return (
     <div>
@@ -97,6 +108,23 @@ export function DashboardView({
         title={`${greeting()}, ${firstName}`}
         description={role ? `${role} · Here's what needs your attention today.` : "Here's what needs your attention today."}
       />
+
+      {/* My Focus Today (Project ORION) — deliberately pinned here, OUTSIDE
+          the customizable widget grid below, same treatment as Attendance.
+          The brief calls this "one of the main features of the dashboard":
+          it must be the first thing an employee sees, not something that
+          could be hidden, resized down, or buried by personal layout
+          choices. See MyFocusCard.tsx / docs/EMPLOYEE_DASHBOARD.md. */}
+      <div className="mb-6">
+        <MyFocusCard
+          activeFocus={activeFocus}
+          resetPrompt={focusResetPrompt}
+          recommendation={focusRecommendation}
+          candidates={focusCandidates}
+          todayISO={todayISO}
+          directReports={directReports}
+        />
+      </div>
 
       {/* Personal stat row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -109,7 +137,10 @@ export function DashboardView({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <AttendanceCard initial={attendanceToday} />
 
-        {/* My Calendar / Upcoming */}
+        {/* My Calendar / Upcoming — Personal Calendar redesign (Project
+            ORION): this preview stays a quick glance, and now links to a
+            full interactive month view with Outlook two-way sync at
+            /dashboard/calendar. */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>
@@ -117,6 +148,9 @@ export function DashboardView({
                 <CalendarIcon className="w-3.5 h-3.5 text-orange" /> My Calendar / Upcoming
               </span>
             </CardTitle>
+            <Link href="/dashboard/calendar" className="text-xs font-semibold text-navy hover:text-orange transition-colors">
+              Open full calendar
+            </Link>
           </CardHeader>
           <CardBody className="space-y-1">
             {myEvents.length === 0 && <p className="text-sm text-light-grey py-2">Nothing scheduled in the next two weeks.</p>}
@@ -159,6 +193,7 @@ export function DashboardView({
           fuelPrices: !hasBroadVisibility ? <FuelPricesCard fuelPrices={fuelPrices} /> : undefined,
           marketNews: <MarketNewsCard articles={marketNewsArticles} canManage={canManageMarketNews} />,
           myNotes: <MyNotesCard notes={myNotes} />,
+          dailyPlanner: <DailyPlannerCard blocks={dailyPlannerBlocks} todayISO={todayISO} />,
         }}
       />
 

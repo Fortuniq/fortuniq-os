@@ -51,7 +51,14 @@ export type AuditAction =
   | "market_news_updated"
   | "market_news_deleted"
   | "market_news_published"
-  | "market_news_archived";
+  | "market_news_archived"
+  | "focus_set"
+  | "focus_recommendation_accepted"
+  | "focus_assigned_by_manager"
+  | "focus_progress_updated"
+  | "focus_completed"
+  | "focus_changed"
+  | "outlook_calendar_synced";
 
 /**
  * Records an entry in the audit log. Used across the app wherever a
