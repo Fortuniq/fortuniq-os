@@ -119,10 +119,10 @@ export function MarketNewsAdminView({ articles }: { articles: MarketNewsArticle[
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => startTransition(() => toggleMarketNewsPin(a.id, !a.pinned))} title={a.pinned ? "Unpin" : "Pin"} className="text-grey hover:text-orange transition-colors p-1">
+                    <button onClick={() => startTransition(async () => { await toggleMarketNewsPin(a.id, !a.pinned); })} title={a.pinned ? "Unpin" : "Pin"} className="text-grey hover:text-orange transition-colors p-1">
                       <Pin className="w-4 h-4" />
                     </button>
-                    <button onClick={() => startTransition(() => toggleMarketNewsHighPriority(a.id, !a.highPriority))} title={a.highPriority ? "Remove High Priority" : "Mark High Priority"} className="text-grey hover:text-orange transition-colors p-1">
+                    <button onClick={() => startTransition(async () => { await toggleMarketNewsHighPriority(a.id, !a.highPriority); })} title={a.highPriority ? "Remove High Priority" : "Mark High Priority"} className="text-grey hover:text-orange transition-colors p-1">
                       <Star className="w-4 h-4" />
                     </button>
                     <button onClick={() => { setEditing(a); setShowAdd(false); setError(null); }} title="Edit" className="text-grey hover:text-navy transition-colors p-1">
@@ -135,12 +135,12 @@ export function MarketNewsAdminView({ articles }: { articles: MarketNewsArticle[
                 </div>
 
                 {a.status !== "Published" && (
-                  <button onClick={() => startTransition(() => setMarketNewsStatus(a.id, "Published"))} className="text-xs font-semibold text-emerald-700 mt-2 hover:underline">
+                  <button onClick={() => startTransition(async () => { await setMarketNewsStatus(a.id, "Published"); })} className="text-xs font-semibold text-emerald-700 mt-2 hover:underline">
                     Publish now
                   </button>
                 )}
                 {a.status === "Published" && (
-                  <button onClick={() => startTransition(() => setMarketNewsStatus(a.id, "Archived"))} className="text-xs font-semibold text-grey mt-2 hover:underline">
+                  <button onClick={() => startTransition(async () => { await setMarketNewsStatus(a.id, "Archived"); })} className="text-xs font-semibold text-grey mt-2 hover:underline">
                     Archive
                   </button>
                 )}
