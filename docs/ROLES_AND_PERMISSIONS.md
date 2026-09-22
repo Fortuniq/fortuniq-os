@@ -24,6 +24,7 @@ an exception (the "Fine-tune" option next to their name).
 | Settings | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Audit Logs | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Attendance | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Market News | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Team Management | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 This exact table is also encoded as an automated test — see "Testing" below.
@@ -34,6 +35,14 @@ reviewing correction requests). It does NOT govern Clock In/Clock Out
 for yourself — that's available to every employee regardless of this
 module grant, since it's a personal action, not an HR privilege. See
 `docs/ATTENDANCE.md`.
+
+**Market News note**: nobody gets this by default except Super Admin —
+"authorised users" (per the Project ORION brief) are granted it
+explicitly, one person at a time, via **Settings → Team** (module
+access) plus the `Manage` action in **System Access & Permissions**.
+This only gates who can create/edit/publish articles — every employee
+with Dashboard access sees published articles on the Market News
+widget regardless of this grant. See `docs/MARKET_NEWS.md`.
 
 ## The reasoning behind each role
 
