@@ -33,6 +33,8 @@ type DashboardProps = {
   fuelPrices: { product: string; price: number; change: number }[];
   notifications: { id: string | number; text: string; time: string; type: string }[];
   myTasks: MyTask[];
+  companyTasks: MyTask[];
+  personalTasks: MyTask[];
   taskGroups: TaskGroups;
   myEvents: CalendarEvent[];
   attendanceToday: AttendanceRecord | null;
@@ -80,7 +82,7 @@ function eventDayLabel(dateStr: string): string {
 }
 
 export function DashboardView({
-  firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowByModule,
+  firstName, role, fuelPrices, myTasks, companyTasks, personalTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowByModule,
   moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   return (
@@ -142,7 +144,7 @@ export function DashboardView({
       <CustomizableDashboardGrid
         initialLayout={dashboardLayout}
         content={{
-          myTasks: <MyTasksCard tasks={myTasks} openCount={myTasks.length} />,
+          myTasks: <MyTasksCard companyTasks={companyTasks} personalTasks={personalTasks} />,
           myWorkflow: <MyWorkflowCard workflowByModule={workflowByModule} moduleCards={moduleCards} />,
           attendanceHistory: <MyAttendanceHistory records={attendanceHistory} />,
           documentExpiry: <DocumentExpiryCard documents={expiringDocuments} />,

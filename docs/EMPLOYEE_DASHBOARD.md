@@ -68,6 +68,37 @@ rather than hand-building bespoke integration for every module in one
 pass — Tenders is the reference; the same pattern extends to Finance/
 Documents/HR/Sales as those workflows are wired up next.
 
+### Company vs Personal split (Project ORION)
+
+The My Tasks widget now shows two tabs, per the brief: **Company Tasks**
+(everything above — manager/workflow-assigned, created only through
+`createTaskForEmployee()`, never editable/deletable by the employee,
+only completable/reopenable) and **Personal Tasks** (employee-created,
+private, full create/edit/delete/reorder/complete/due-dates/priority,
+plus an optional reminder date/time). Both live in the SAME `tasks`
+table — a new `task_type` column (`'Company'` / `'Personal'`, see
+`migration_v31_personal_tasks.sql`) distinguishes them rather than a
+second parallel table, keeping the "avoid a second task system"
+principle intact even as CRUD gets added.
+
+- `src/lib/tasks-core.ts` — `TaskType`, `splitTasksByType()`,
+  `sortPersonalTasks()` (personal tasks keep the employee's own
+  drag-and-drop order via `sort_order`, not the due-date order Company
+  tasks use), `validatePersonalTaskInput()`.
+- `src/lib/tasks.ts` — `createPersonalTask()` / `updatePersonalTask()`
+  / `deletePersonalTask()` / `reorderPersonalTasks()`, each re-checking
+  ownership AND `task_type = 'Personal'` server-side — none of them can
+  ever be used to edit or delete a Company task, even if a client sent
+  a Company task's id.
+- `src/app/(app)/dashboard/PersonalTaskList.tsx` — the full CRUD UI
+  (native HTML5 drag-and-drop, same no-new-dependency choice as the
+  Phase 1 customizable layout).
+
+**Known limitation**: the `reminder_at` column has no delivery
+mechanism yet (no push/email/notification job reads it) — it's stored
+and shown, but nothing fires when it arrives. Wiring it up is a
+natural follow-on once the Daily Planner / notifications phases land.
+
 ## Calendar
 
 `calendar_events` is a genuinely separate record type from `tasks`
@@ -184,13 +215,17 @@ UI redesign, per the brief's explicit two-phase instruction. No
 placeholder content, no external API — real content, manually
 published, from day one.
 
+### Phase 3 — My Tasks split, Company vs Personal (done)
+
+See "Company vs Personal split (Project ORION)" above.
+
 ### What's next
 
-My Tasks split (Company/Personal), My Workflow redesign, My Notes,
-Daily Planner, Personal Calendar redesign, Outlook Calendar two-way
-sync (blocked on an explicit decision to request the new `Calendars`
-Microsoft Graph scope — not added unilaterally, since every employee
-would see a new consent prompt), and My Focus Today.
+My Workflow redesign, My Notes, Daily Planner, Personal Calendar
+redesign, Outlook Calendar two-way sync (blocked on an explicit
+decision to request the new `Calendars` Microsoft Graph scope — not
+added unilaterally, since every employee would see a new consent
+prompt), and My Focus Today.
 
 ## Known limitations / what wasn't built in this pass
 

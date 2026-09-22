@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { hasModuleAccess, type UserPermissions, type ModuleKey } from "@/lib/permissions";
-import { canSeeTask, sortMyTasks, type MyTask } from "@/lib/tasks-core";
+import { canSeeTask, sortMyTasks, validatePersonalTaskInput, type MyTask, type TaskPriority } from "@/lib/tasks-core";
 import * as mock from "@/lib/mock-data";
 
 const supabaseConfigured =
@@ -10,6 +10,10 @@ function mapRow(row: Record<string, unknown>): MyTask {
   return {
     id: row.id as string,
     title: row.title as string,
+    // Existing rows predate the task_type column entirely — every one of
+    // them is workflow-generated, so "Company" is the correct fallback,
+    // never "Personal" (see migration_v31_personal_tasks.sql).
+    taskType: (row.task_type as MyTask["taskType"]) ?? "Company",
     moduleKey: (row.module_key as string) ?? null,
     recordId: (row.record_id as string) ?? null,
     recordUrl: (row.record_url as string) ?? null,
@@ -19,6 +23,8 @@ function mapRow(row: Record<string, unknown>): MyTask {
     priority: (row.priority as string) ?? "Medium",
     status: (row.status as MyTask["status"]) ?? (row.done ? "Completed" : "To Do"),
     workflowStage: (row.workflow_stage as string) ?? null,
+    sortOrder: typeof row.sort_order === "number" ? row.sort_order : null,
+    reminderAt: (row.reminder_at as string) ?? null,
     createdAt: (row.created_at as string) ?? null,
     completedAt: (row.completed_at as string) ?? null,
   };
@@ -43,9 +49,10 @@ export async function getMyTasks(permissions: UserPermissions): Promise<MyTask[]
     // something real to show before a database is connected.
     return sortMyTasks(
       mock.tasks.map((t) => ({
-        id: t.id, title: t.title, moduleKey: null, recordId: null, recordUrl: null,
+        id: t.id, title: t.title, taskType: "Company" as const, moduleKey: null, recordId: null, recordUrl: null,
         employeeEmail: permissions.email!, dueDate: null, dueLabel: t.due,
-        priority: t.priority, status: "To Do" as const, workflowStage: null, createdAt: null, completedAt: null,
+        priority: t.priority, status: "To Do" as const, workflowStage: null, sortOrder: null, reminderAt: null,
+        createdAt: null, completedAt: null,
       }))
     );
   }
@@ -129,6 +136,7 @@ export async function createTaskForEmployeeWithId(params: {
     const supabase = createServiceClient();
     const { data, error } = await supabase.from("tasks").insert({
       title: params.title,
+      task_type: "Company", // every workflow-generated task is a Company task by definition — see tasks-core.ts
       employee_email: params.employeeEmail.toLowerCase(),
       module_key: params.moduleKey,
       record_id: params.recordId ?? null,
@@ -191,6 +199,129 @@ export async function reopenTask(taskId: string, actorEmail: string): Promise<{ 
     return {};
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to reopen task." };
+  }
+}
+
+// =========================================================================
+// PERSONAL TASKS — Project ORION, "My Tasks split into Company Tasks
+// (manager/workflow-assigned) and Personal Tasks (employee-created,
+// private)." Every function below only ever touches rows the caller
+// owns AND that are task_type = 'Personal' — an employee can never use
+// these to edit or delete a Company task assigned to them (they can
+// only complete/reopen those, via completeTask/reopenTask above), and
+// can never touch another employee's personal tasks even if they
+// somehow guessed the id. See docs/EMPLOYEE_DASHBOARD.md.
+// =========================================================================
+
+/** Creates a new personal task for the signed-in employee, appended to the end of their current ordering. Validation happens here (not just in the server action) so this function is safe to call from anywhere. */
+export async function createPersonalTask(
+  employeeEmail: string,
+  input: { title: string; dueDate?: string | null; priority?: TaskPriority; reminderAt?: string | null }
+): Promise<{ error?: string; id?: string }> {
+  const validationError = validatePersonalTaskInput(input);
+  if (validationError) return { error: validationError };
+  if (!supabaseConfigured) return {};
+  try {
+    const supabase = createServiceClient();
+    const { count } = await supabase
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("employee_email", employeeEmail.toLowerCase())
+      .eq("task_type", "Personal");
+
+    const { data, error } = await supabase.from("tasks").insert({
+      title: input.title.trim(),
+      task_type: "Personal",
+      employee_email: employeeEmail.toLowerCase(),
+      module_key: null,
+      due_date: input.dueDate || null,
+      priority: input.priority ?? "Medium",
+      status: "To Do",
+      reminder_at: input.reminderAt || null,
+      sort_order: count ?? 0,
+      created_by: employeeEmail,
+      owner: employeeEmail,
+    }).select("id").single();
+    if (error || !data) return { error: "Couldn't create the task. Please try again." };
+    return { id: data.id as string };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to create task." };
+  }
+}
+
+/** Edits a personal task's own fields — title/due date/priority/reminder. Never touches status (use completeTask/reopenTask, which already enforce the same ownership check) or task_type (a personal task can never be silently turned into a Company task, or vice versa). */
+export async function updatePersonalTask(
+  taskId: string,
+  actorEmail: string,
+  input: { title: string; dueDate?: string | null; priority?: TaskPriority; reminderAt?: string | null }
+): Promise<{ error?: string }> {
+  const validationError = validatePersonalTaskInput(input);
+  if (validationError) return { error: validationError };
+  if (!supabaseConfigured) return {};
+  try {
+    const supabase = createServiceClient();
+    const { data: existing } = await supabase.from("tasks").select("employee_email, task_type").eq("id", taskId).maybeSingle();
+    if (!existing) return { error: "Task not found." };
+    if (existing.task_type !== "Personal") return { error: "Only personal tasks can be edited here." };
+    if ((existing.employee_email ?? "").toLowerCase() !== actorEmail.toLowerCase()) return { error: "You can only edit your own tasks." };
+
+    await supabase.from("tasks").update({
+      title: input.title.trim(),
+      due_date: input.dueDate || null,
+      priority: input.priority ?? "Medium",
+      reminder_at: input.reminderAt || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", taskId);
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to update task." };
+  }
+}
+
+/** Deletes a personal task outright (unlike Company tasks, which are never deletable from My Tasks — they reflect real assigned work and stay as the record of it). Same ownership + task_type guard as every other personal-task function. */
+export async function deletePersonalTask(taskId: string, actorEmail: string): Promise<{ error?: string }> {
+  if (!supabaseConfigured) return {};
+  try {
+    const supabase = createServiceClient();
+    const { data: existing } = await supabase.from("tasks").select("employee_email, task_type").eq("id", taskId).maybeSingle();
+    if (!existing) return { error: "Task not found." };
+    if (existing.task_type !== "Personal") return { error: "Only personal tasks can be deleted here." };
+    if ((existing.employee_email ?? "").toLowerCase() !== actorEmail.toLowerCase()) return { error: "You can only delete your own tasks." };
+
+    await supabase.from("tasks").delete().eq("id", taskId);
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to delete task." };
+  }
+}
+
+/**
+ * Persists a new drag-and-drop order for the signed-in employee's
+ * personal tasks. Takes the full ordered list of ids (not a single
+ * moved item + target index) — same "never trust a partial client
+ * instruction" posture as dashboard layout saving — and re-numbers them
+ * 0..n-1 server-side rather than trusting any position the client sends.
+ * Silently ignores any id that isn't actually one of this employee's own
+ * personal tasks, rather than failing the whole reorder.
+ */
+export async function reorderPersonalTasks(employeeEmail: string, orderedIds: string[]): Promise<{ error?: string }> {
+  if (!supabaseConfigured) return {};
+  try {
+    const supabase = createServiceClient();
+    const { data: mine } = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("employee_email", employeeEmail.toLowerCase())
+      .eq("task_type", "Personal");
+    const ownedIds = new Set((mine ?? []).map((r) => r.id as string));
+
+    const updates = orderedIds
+      .filter((id) => ownedIds.has(id))
+      .map((id, index) => supabase.from("tasks").update({ sort_order: index, updated_at: new Date().toISOString() }).eq("id", id));
+    await Promise.all(updates);
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to reorder tasks." };
   }
 }
 

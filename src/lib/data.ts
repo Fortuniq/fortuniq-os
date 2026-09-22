@@ -5,7 +5,7 @@ import { hasModuleAccess, type UserPermissions } from "@/lib/permissions";
 import { getMyTasks, getOrganisationTaskStats } from "@/lib/tasks";
 import { getMyUpcomingEvents } from "@/lib/calendar";
 import { getTodayAttendance, getMyAttendanceHistory } from "@/lib/attendance";
-import { groupMyTasks } from "@/lib/tasks-core";
+import { groupMyTasks, splitTasksByType, sortPersonalTasks } from "@/lib/tasks-core";
 import { getMyLeaveRequests, getPendingLeaveRequests } from "@/lib/leave";
 import { isWithinDays, isAnniversaryToday } from "@/lib/hcm-core";
 import { getMyTenderStageAssignments } from "@/lib/tender-assignments";
@@ -693,6 +693,16 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
   };
 
   const taskGroups = groupMyTasks(myTasks);
+  // Project ORION — "My Tasks split into Company Tasks (manager/workflow-
+  // assigned) and Personal Tasks (employee-created, private)." A display
+  // split only — both were already fetched, permission-filtered and
+  // combined above (getMyTasks/taskGroups still cover both, since a
+  // personal task due today is just as real as a company one).
+  const split = splitTasksByType(myTasks);
+  const companyTasks = split.companyTasks;
+  // Personal tasks display in the employee's own chosen order, not the
+  // due-date-driven order sortMyTasks() already applied above.
+  const personalTasks = sortPersonalTasks(split.personalTasks);
 
   // "My Workflow": counts of open tasks grouped by the module they came
   // from — reuses the same unified task layer rather than a separate
@@ -751,6 +761,8 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     fuelPrices: raw.fuelPrices, // operational reference data, not confidential — shown to everyone with dashboard access
     notifications: raw.notifications, // company-wide notifications table isn't module-tagged yet — see docs/EMPLOYEE_DASHBOARD.md for the planned follow-up
     myTasks,
+    companyTasks,
+    personalTasks,
     taskGroups,
     myEvents,
     attendanceToday,

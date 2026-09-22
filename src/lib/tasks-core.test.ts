@@ -1,13 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { effectiveStatus, isDueToday, groupMyTasks, sortMyTasks, canSeeTask, type MyTask } from "./tasks-core";
+import {
+  effectiveStatus, isDueToday, groupMyTasks, sortMyTasks, canSeeTask,
+  splitTasksByType, sortPersonalTasks, validatePersonalTaskInput, type MyTask,
+} from "./tasks-core";
 
 const TODAY = new Date("2026-08-17T09:00:00");
 
 function task(overrides: Partial<MyTask>): MyTask {
   return {
-    id: "1", title: "Test task", moduleKey: null, recordId: null, recordUrl: null,
+    id: "1", title: "Test task", taskType: "Company", moduleKey: null, recordId: null, recordUrl: null,
     employeeEmail: "person@iqfuels.co.za", dueDate: null, dueLabel: null,
-    priority: "Medium", status: "To Do", workflowStage: null, createdAt: null, completedAt: null,
+    priority: "Medium", status: "To Do", workflowStage: null, sortOrder: null, reminderAt: null,
+    createdAt: null, completedAt: null,
     ...overrides,
   };
 }
@@ -89,5 +93,58 @@ describe("canSeeTask", () => {
   it("email matching is case-insensitive", () => {
     const t = task({ employeeEmail: "Me@IQFuels.co.za" });
     expect(canSeeTask(t, "me@iqfuels.co.za", () => true)).toBe(true);
+  });
+});
+
+describe("splitTasksByType", () => {
+  it("separates Company and Personal tasks", () => {
+    const tasks = [task({ id: 1, taskType: "Company" }), task({ id: 2, taskType: "Personal" }), task({ id: 3, taskType: "Company" })];
+    const { companyTasks, personalTasks } = splitTasksByType(tasks);
+    expect(companyTasks.map((t) => t.id)).toEqual([1, 3]);
+    expect(personalTasks.map((t) => t.id)).toEqual([2]);
+  });
+});
+
+describe("sortPersonalTasks", () => {
+  it("orders by sortOrder ascending", () => {
+    const tasks = [task({ id: 1, sortOrder: 2 }), task({ id: 2, sortOrder: 0 }), task({ id: 3, sortOrder: 1 })];
+    expect(sortPersonalTasks(tasks).map((t) => t.id)).toEqual([2, 3, 1]);
+  });
+  it("falls back to createdAt when sortOrder ties or is missing", () => {
+    const tasks = [task({ id: 1, sortOrder: null, createdAt: "2026-09-02" }), task({ id: 2, sortOrder: null, createdAt: "2026-09-01" })];
+    expect(sortPersonalTasks(tasks).map((t) => t.id)).toEqual([2, 1]);
+  });
+  it("does not mutate the input array", () => {
+    const tasks = [task({ id: 1, sortOrder: 1 }), task({ id: 2, sortOrder: 0 })];
+    const copy = [...tasks];
+    sortPersonalTasks(tasks);
+    expect(tasks).toEqual(copy);
+  });
+});
+
+describe("validatePersonalTaskInput", () => {
+  it("accepts a minimal valid input (title only)", () => {
+    expect(validatePersonalTaskInput({ title: "Call the auditor" })).toBeNull();
+  });
+  it("rejects a missing title", () => {
+    expect(validatePersonalTaskInput({ title: "   " })).toMatch(/title/i);
+  });
+  it("rejects an unreasonably long title", () => {
+    expect(validatePersonalTaskInput({ title: "x".repeat(201) })).toMatch(/200/);
+  });
+  it("rejects an invalid priority", () => {
+    expect(validatePersonalTaskInput({ title: "x", priority: "Urgent" })).toMatch(/priority/i);
+  });
+  it("accepts a valid priority", () => {
+    expect(validatePersonalTaskInput({ title: "x", priority: "High" })).toBeNull();
+  });
+  it("rejects an invalid due date", () => {
+    expect(validatePersonalTaskInput({ title: "x", dueDate: "not-a-date" })).toMatch(/due date/i);
+  });
+  it("rejects an invalid reminder", () => {
+    expect(validatePersonalTaskInput({ title: "x", reminderAt: "not-a-date" })).toMatch(/reminder/i);
+  });
+  it("accepts a valid reminder", () => {
+    expect(validatePersonalTaskInput({ title: "x", reminderAt: "2026-09-25T08:00:00.000Z" })).toBeNull();
   });
 });
