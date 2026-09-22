@@ -14,6 +14,18 @@ const isOutlookConfigured = !!process.env.AUTH_MICROSOFT_ENTRA_ID_ID;
 
 async function requireGraphAccessToken(): Promise<{ accessToken?: string; error?: string }> {
   const session = await auth();
+  // session.error is set by auth.ts's refreshAccessToken() when Microsoft
+  // rejected the refresh — most commonly because the person's current
+  // Microsoft session was granted before a new scope was added (this
+  // deploy added Calendars.ReadWrite) and hasn't re-consented yet. When
+  // that happens, session.accessToken still holds the OLD, now-expired
+  // token rather than being cleared, so this check has to come first —
+  // otherwise we'd hand that stale token straight to Graph and get back
+  // a confusing raw "Lifetime validation failed, the token is expired"
+  // error instead of a clear, actionable one.
+  if (session?.error === "RefreshAccessTokenError") {
+    return { error: "Your Microsoft sign-in needs to be refreshed to use the new Calendar permission — please sign out and sign back in." };
+  }
   if (!session?.accessToken) return { error: "Your Microsoft session needs refreshing — try signing out and back in." };
   return { accessToken: session.accessToken as string };
 }
