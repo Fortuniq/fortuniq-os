@@ -28,10 +28,11 @@ export type DashboardWidgetKey =
   | "hcmReminders"
   | "myTenderTasks"
   | "fuelPrices"
-  | "marketNews";
+  | "marketNews"
+  | "myNotes";
 
 export const ALL_DASHBOARD_WIDGET_KEYS: DashboardWidgetKey[] = [
-  "myTasks", "myWorkflow", "attendanceHistory", "documentExpiry", "hcmReminders", "myTenderTasks", "fuelPrices", "marketNews",
+  "myTasks", "myWorkflow", "attendanceHistory", "documentExpiry", "hcmReminders", "myTenderTasks", "fuelPrices", "marketNews", "myNotes",
 ];
 
 function isDashboardWidgetKey(value: unknown): value is DashboardWidgetKey {
@@ -72,6 +73,10 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetDefinition[] = [
   // is the widget most likely to carry the daily SA petroleum briefing
   // everyone's expected to actually read (Project ORION Phase 2).
   { key: "marketNews", label: "Market News", defaultVisible: true, defaultSize: "wide", defaultOrder: 7 },
+  // Always available (like myTasks/myWorkflow), never gated on having
+  // content — an empty notes widget IS the "add your first note" entry
+  // point, so it can never be hidden until someone already has a note.
+  { key: "myNotes", label: "My Notes", defaultVisible: true, defaultSize: "standard", defaultOrder: 8 },
 ];
 
 const REGISTRY_BY_KEY = new Map(DASHBOARD_WIDGET_REGISTRY.map((w) => [w.key, w]));

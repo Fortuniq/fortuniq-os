@@ -16,6 +16,7 @@ import { getDashboardLayout } from "@/lib/dashboard-layout-data";
 import { getPublishedMarketNews } from "@/lib/market-news-data";
 import { checkPermissionAction } from "@/lib/rbac";
 import { pickCurrentWorkflowItemsByModule, buildWorkflowHistory } from "@/lib/workflow-core";
+import { getMyNotes } from "@/lib/notes-data";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -657,7 +658,7 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews, recentlyCompletedWorkflowTasks] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews, recentlyCompletedWorkflowTasks, myNotes] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
@@ -672,6 +673,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     checkPermissionAction(permissions, "market-news", "Manage"),
     // Feeds the redesigned My Workflow widget's history list.
     permissions.email ? getMyRecentlyCompletedWorkflowTasks(permissions.email, 5) : Promise.resolve([]),
+    permissions.email ? getMyNotes(permissions.email) : Promise.resolve([]),
   ]);
 
   // HCM Phase 3 dashboard reminders — see docs/HCM_PHASE3.md, "Dashboard."
@@ -755,6 +757,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
   const availableWidgetKeys: DashboardWidgetKey[] = [
     "myTasks",
     "myWorkflow",
+    "myNotes",
     ...(attendanceHistory.length > 0 ? (["attendanceHistory"] as const) : []),
     ...(expiringDocuments.some((d) => isExpired(d.expiryDate) || isExpiringSoon(d.expiryDate)) ? (["documentExpiry"] as const) : []),
     ...(hcmHasAnything ? (["hcmReminders"] as const) : []),
@@ -792,6 +795,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     orgStatsSummary: hasBroadVisibility ? raw.stats : null,
     marketNewsArticles,
     canManageMarketNews,
+    myNotes,
     availableWidgetKeys,
     dashboardLayout,
   };

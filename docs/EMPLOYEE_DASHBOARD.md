@@ -253,12 +253,50 @@ on the existing unified task layer, not a new tracking system — a
   (`moduleCards`, computed from the same `workflowByModule` counts,
   unchanged).
 
+### Phase 5 — My Notes (done)
+
+Per the brief: a private notes widget for "notes, meeting minutes,
+ideas, phone numbers, reminders, action items." Deliberately the
+simplest ORION phase — free-text only, no categorisation or tagging,
+since the brief's list of use cases is broad enough that any imposed
+structure would just get in the way. Entirely private: nobody but the
+signed-in employee can ever read or write their own notes, not even
+Super Admin — there's no admin/manager view of another employee's
+notes anywhere in this feature.
+
+- `src/lib/notes-core.ts` — pure logic (zero DB/Next dependencies):
+  `PersonalNote`/`NoteInput` types, `validateNoteInput()` (content
+  required, ≤10,000 chars; optional title ≤200 chars), `sortNotes()`
+  (pinned first, then most-recently-updated), `notePreview()` (first
+  line, truncated) used for the collapsed card view.
+- `supabase/migration_v32_personal_notes.sql` — new `personal_notes`
+  table (`employee_email`, `title` nullable, `content`, `pinned`,
+  timestamps), indexed on `employee_email`, RLS deny-all (all access
+  goes through the service-role client in `notes-data.ts`, same
+  pattern as every other personal-data table in this project).
+- `src/lib/notes-data.ts` — `getMyNotes()` / `createNote()` /
+  `updateNote()` / `deleteNote()` / `toggleNotePin()`, each of the
+  write functions re-checking `employee_email` ownership server-side
+  before touching a row, independent of whatever the client sent.
+- `src/app/(app)/dashboard/note-actions.ts` — server actions deriving
+  the owner from the signed-in session only (never a client-supplied
+  email), same posture as the Personal Tasks actions.
+- `src/app/(app)/dashboard/MyNotesCard.tsx` — expandable note cards
+  (click to expand/collapse full content vs. preview), inline
+  add/edit form, pin/unpin, delete with confirmation.
+- **Always available, unlike every other widget in the customization
+  system**: `myNotes` is added to `availableWidgetKeys`
+  unconditionally in `data.ts`, not gated on having any notes yet —
+  an empty My Notes widget IS the "add your first note" entry point,
+  so hiding it until content exists would hide the only way to create
+  that content. Documented inline in `dashboard-widgets.ts`.
+
 ### What's next
 
-My Notes, Daily Planner, Personal Calendar redesign, Outlook Calendar
-two-way sync (blocked on an explicit decision to request the new
-`Calendars` Microsoft Graph scope — not added unilaterally, since
-every employee would see a new consent prompt), and My Focus Today.
+Daily Planner, Personal Calendar redesign, Outlook Calendar two-way
+sync (blocked on an explicit decision to request the new `Calendars`
+Microsoft Graph scope — not added unilaterally, since every employee
+would see a new consent prompt), and My Focus Today.
 
 ## Known limitations / what wasn't built in this pass
 
