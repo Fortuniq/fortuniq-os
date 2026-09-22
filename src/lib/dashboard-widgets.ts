@@ -27,10 +27,11 @@ export type DashboardWidgetKey =
   | "documentExpiry"
   | "hcmReminders"
   | "myTenderTasks"
-  | "fuelPrices";
+  | "fuelPrices"
+  | "marketNews";
 
 export const ALL_DASHBOARD_WIDGET_KEYS: DashboardWidgetKey[] = [
-  "myTasks", "myWorkflow", "attendanceHistory", "documentExpiry", "hcmReminders", "myTenderTasks", "fuelPrices",
+  "myTasks", "myWorkflow", "attendanceHistory", "documentExpiry", "hcmReminders", "myTenderTasks", "fuelPrices", "marketNews",
 ];
 
 function isDashboardWidgetKey(value: unknown): value is DashboardWidgetKey {
@@ -67,6 +68,10 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetDefinition[] = [
   { key: "hcmReminders", label: "Reminders", defaultVisible: true, defaultSize: "standard", defaultOrder: 4 },
   { key: "myTenderTasks", label: "My Tender Tasks", defaultVisible: true, defaultSize: "standard", defaultOrder: 5 },
   { key: "fuelPrices", label: "Live Fuel Prices", defaultVisible: true, defaultSize: "standard", defaultOrder: 6 },
+  // "wide" by default — news cards read better at full width, and this
+  // is the widget most likely to carry the daily SA petroleum briefing
+  // everyone's expected to actually read (Project ORION Phase 2).
+  { key: "marketNews", label: "Market News", defaultVisible: true, defaultSize: "wide", defaultOrder: 7 },
 ];
 
 const REGISTRY_BY_KEY = new Map(DASHBOARD_WIDGET_REGISTRY.map((w) => [w.key, w]));

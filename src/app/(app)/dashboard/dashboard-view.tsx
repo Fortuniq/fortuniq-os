@@ -17,11 +17,13 @@ import { DocumentExpiryCard } from "./DocumentExpiryCard";
 import { HCMRemindersCard } from "./HCMRemindersCard";
 import { MyTenderTasksCard } from "./MyTenderTasksCard";
 import { FuelPricesCard } from "./FuelPricesCard";
+import { MarketNewsCard } from "./MarketNewsCard";
 import { CustomizableDashboardGrid } from "./CustomizableDashboardGrid";
 import type { MyTask, TaskGroups } from "@/lib/tasks-core";
 import type { CalendarEvent } from "@/lib/calendar";
 import type { AttendanceRecord } from "@/lib/attendance-core";
 import type { DashboardWidgetLayoutEntry } from "@/lib/dashboard-widgets";
+import type { MarketNewsArticle } from "@/lib/market-news-core";
 
 type ExpiringDoc = { id: string; name: string; category: string; expiryDate: string; status: string };
 
@@ -48,6 +50,8 @@ type DashboardProps = {
   workflowByModule: Record<string, number>;
   moduleCards: { key: string; label: string; href: string; taskCount: number }[];
   dashboardLayout: DashboardWidgetLayoutEntry[];
+  marketNewsArticles: MarketNewsArticle[];
+  canManageMarketNews: boolean;
   hasBroadVisibility: boolean;
   orgStats: { total: number; overdue: number } | null;
   salesTrend: { month: string; sales: number }[] | null;
@@ -77,7 +81,7 @@ function eventDayLabel(dateStr: string): string {
 
 export function DashboardView({
   firstName, role, fuelPrices, myTasks, taskGroups, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myTenderAssignments, hcmReminders, workflowByModule,
-  moduleCards, dashboardLayout, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
+  moduleCards, dashboardLayout, marketNewsArticles, canManageMarketNews, hasBroadVisibility, orgStats, salesTrend, orgStatsSummary,
 }: DashboardProps) {
   return (
     <div>
@@ -145,6 +149,7 @@ export function DashboardView({
           hcmReminders: <HCMRemindersCard reminders={hcmReminders} isHR={role === "HR/Admin" || hasBroadVisibility} />,
           myTenderTasks: <MyTenderTasksCard assignments={myTenderAssignments} />,
           fuelPrices: !hasBroadVisibility ? <FuelPricesCard fuelPrices={fuelPrices} /> : undefined,
+          marketNews: <MarketNewsCard articles={marketNewsArticles} canManage={canManageMarketNews} />,
         }}
       />
 

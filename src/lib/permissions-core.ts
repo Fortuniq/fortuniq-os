@@ -12,7 +12,7 @@
 export type ModuleKey =
   | "dashboard" | "people" | "academy" | "documents" | "tenders"
   | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings" | "audit" | "attendance";
+  | "ai" | "settings" | "audit" | "attendance" | "market-news";
 
 export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -29,6 +29,7 @@ export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: "settings", label: "Settings" },
   { key: "audit", label: "Audit Logs" },
   { key: "attendance", label: "Attendance Management" },
+  { key: "market-news", label: "Market News Administration" },
 ];
 
 export const ALL_MODULE_KEYS = ALL_MODULES.map((m) => m.key);

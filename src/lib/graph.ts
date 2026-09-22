@@ -509,6 +509,21 @@ export async function getArchiveFolder(accessToken: string, category: string): P
 }
 
 /**
+ * Gets (creating if needed) the SharePoint folder Market News admin
+ * attachments (supporting PDFs) are uploaded into — a single top-level
+ * folder, deliberately separate from "FortunIQ Documents" since these
+ * aren't document-control records (no versioning, classification or
+ * approval workflow), just supporting material for a news briefing. See
+ * docs/MARKET_NEWS.md.
+ */
+const MARKET_NEWS_ATTACHMENTS_FOLDER = "Market News Attachments";
+
+export async function getMarketNewsAttachmentsFolder(accessToken: string): Promise<{ id: string; webUrl: string }> {
+  const { driveId } = await resolveSharePointSite(accessToken);
+  return ensureFolder(accessToken, driveId, "", MARKET_NEWS_ATTACHMENTS_FOLDER);
+}
+
+/**
  * Uploads a file's raw bytes into a specific folder — see
  * uploadFileToFolder() below for the full explanation of how files up
  * to 8MB are handled (simple upload under 4MB, chunked upload session

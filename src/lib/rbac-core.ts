@@ -23,7 +23,7 @@ export const ALL_PERMISSION_ACTIONS: PermissionAction[] = ["View", "Create", "Ed
 export type RbacModuleKey =
   | "dashboard" | "people" | "academy" | "documents" | "tenders"
   | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings" | "audit" | "attendance";
+  | "ai" | "settings" | "audit" | "attendance" | "market-news";
 
 export const ALL_RBAC_MODULES: { key: RbacModuleKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -40,6 +40,7 @@ export const ALL_RBAC_MODULES: { key: RbacModuleKey; label: string }[] = [
   { key: "settings", label: "Settings" },
   { key: "audit", label: "Audit Logs" },
   { key: "attendance", label: "Attendance Management" },
+  { key: "market-news", label: "Market News Administration" },
 ];
 
 // A person's complete, granular permission set: which actions they hold

@@ -13,6 +13,8 @@ import { NAV_ITEMS } from "@/lib/nav";
 import { isExpired, isExpiringSoon } from "@/lib/documents-core";
 import { mergeDashboardLayout, type DashboardWidgetKey } from "@/lib/dashboard-widgets";
 import { getDashboardLayout } from "@/lib/dashboard-layout-data";
+import { getPublishedMarketNews } from "@/lib/market-news-data";
+import { checkPermissionAction } from "@/lib/rbac";
 
 /**
  * Data access layer for FortunIQ OS.
@@ -654,7 +656,7 @@ async function getRawDashboardData() {
 export async function getPersonalisedDashboardData(permissions: UserPermissions) {
   const raw = await getRawDashboardData();
 
-  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments] = await Promise.all([
+  const [myTasks, myEvents, attendanceToday, attendanceHistory, expiringDocuments, myEmployeeRecord, myTenderAssignments, marketNewsArticles, canManageMarketNews] = await Promise.all([
     getMyTasks(permissions),
     getMyUpcomingEvents(permissions, 14),
     permissions.email ? getTodayAttendance(permissions.email) : Promise.resolve(null),
@@ -662,6 +664,11 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     hasModuleAccess(permissions, "documents") ? getExpiringDocuments() : Promise.resolve([]),
     permissions.email ? getEmployeeProfile((await getEmployeeByEmail(permissions.email))?.id ?? "") : Promise.resolve(null),
     hasModuleAccess(permissions, "tenders") && permissions.email ? getMyTenderStageAssignments(permissions.email) : Promise.resolve([]),
+    // Published Market News is visible to everyone with dashboard access,
+    // same as fuel prices — no module/RBAC gate on reading it (only
+    // creating/editing is restricted). See market-news-data.ts.
+    getPublishedMarketNews(8),
+    checkPermissionAction(permissions, "market-news", "Manage"),
   ]);
 
   // HCM Phase 3 dashboard reminders — see docs/HCM_PHASE3.md, "Dashboard."
@@ -697,7 +704,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     workflowByModule.set(t.moduleKey, (workflowByModule.get(t.moduleKey) ?? 0) + 1);
   }
 
-  const EXCLUDED_FROM_CARDS = new Set(["dashboard", "settings", "audit", "attendance", "ai"]);
+  const EXCLUDED_FROM_CARDS = new Set(["dashboard", "settings", "audit", "attendance", "ai", "market-news"]);
   const moduleCards = NAV_ITEMS
     .filter((item) => !EXCLUDED_FROM_CARDS.has(item.key) && hasModuleAccess(permissions, item.key))
     .map((item) => ({
@@ -734,6 +741,7 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     ...(hcmHasAnything ? (["hcmReminders"] as const) : []),
     ...(myTenderAssignments.length > 0 ? (["myTenderTasks"] as const) : []),
     ...(!hasBroadVisibility && raw.fuelPrices.length > 0 ? (["fuelPrices"] as const) : []),
+    ...(marketNewsArticles.length > 0 ? (["marketNews"] as const) : []),
   ];
   const dashboardLayout = mergeDashboardLayout(availableWidgetKeys, await getDashboardLayout(permissions.email));
 
@@ -759,6 +767,8 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     orgStats,
     salesTrend: hasBroadVisibility ? raw.salesTrend : null,
     orgStatsSummary: hasBroadVisibility ? raw.stats : null,
+    marketNewsArticles,
+    canManageMarketNews,
     availableWidgetKeys,
     dashboardLayout,
   };

@@ -173,14 +173,24 @@ system).
   deletes the saved row rather than writing back defaults, so a future
   new widget appears automatically instead of being frozen out.
 
+### Phase 2 — Market News module (done)
+
+Full admin-managed CRUD content module (create/edit/delete/pin/
+categorise/publish+expiry dates/high-priority/PDF-or-link attachments)
+feeding a new `marketNews` dashboard widget — see `docs/MARKET_NEWS.md`
+for the complete design, including the deliberate `source` column that
+lets a future external API or AI pipeline plug in without a schema or
+UI redesign, per the brief's explicit two-phase instruction. No
+placeholder content, no external API — real content, manually
+published, from day one.
+
 ### What's next
 
-Market News module (Phase 2, admin-managed CRUD — see the brief for
-the full spec), then My Tasks split (Company/Personal), My Workflow
-redesign, My Notes, Daily Planner, Personal Calendar redesign, Outlook
-Calendar two-way sync (blocked on an explicit decision to request the
-new `Calendars` Microsoft Graph scope — not added unilaterally, since
-every employee would see a new consent prompt), and My Focus Today.
+My Tasks split (Company/Personal), My Workflow redesign, My Notes,
+Daily Planner, Personal Calendar redesign, Outlook Calendar two-way
+sync (blocked on an explicit decision to request the new `Calendars`
+Microsoft Graph scope — not added unilaterally, since every employee
+would see a new consent prompt), and My Focus Today.
 
 ## Known limitations / what wasn't built in this pass
 

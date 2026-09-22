@@ -46,7 +46,12 @@ export type AuditAction =
   | "invoice_revised"
   | "invoice_cancelled"
   | "payment_recorded"
-  | "finance_settings_changed";
+  | "finance_settings_changed"
+  | "market_news_created"
+  | "market_news_updated"
+  | "market_news_deleted"
+  | "market_news_published"
+  | "market_news_archived";
 
 /**
  * Records an entry in the audit log. Used across the app wherever a
