@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import type { UserPermissions } from "@/lib/permissions";
-import { canSeeInEmploymentFile, type DocumentVisibility } from "@/lib/employee-hub-core";
+import { canSeeInEmploymentFile, canManagerViewByVisibility, type DocumentVisibility } from "@/lib/employee-hub-core";
 import { computeComplianceStatus, type ComplianceItem } from "@/lib/compliance-status-core";
 
 const supabaseConfigured =
@@ -126,17 +126,25 @@ export async function getMyComplianceStatus(employeeId: string, employmentFile: 
 }
 
 /**
- * ALL documents linked to an employee, regardless of visibility — for
- * HR's own Document Centre view on the Employee Profile screen. Unlike
- * getMyEmploymentFile(), this is never shown to the employee
- * themselves — it's the HR-facing counterpart.
+ * Documents linked to an employee, for the HR-side Document Centre view
+ * on the Employee Profile screen (never shown to the employee
+ * themselves — that's getMyEmploymentFile()'s job). Filtered server-side
+ * by canManagerViewByVisibility() so classification is actually
+ * enforced here too, not just in the employee's own view — a Manager
+ * without HR/Admin's broader access only sees "Employee Visible"/
+ * "Manager Visible" documents for their own direct reports, never "HR
+ * Restricted", "Finance Restricted" or "Super Admin Only" ones. Pass
+ * `viewer` and whether they're this employee's direct manager; omitting
+ * `viewer` (legacy call sites) returns everything unfiltered, so every
+ * caller should be updated to pass it. See
+ * docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
  */
-export async function getEmployeeDocuments(employeeId: string) {
+export async function getEmployeeDocuments(employeeId: string, viewer?: UserPermissions, isDirectManager = false) {
   if (!supabaseConfigured) return [];
   try {
     const supabase = createServiceClient();
     const { data } = await supabase.from("documents").select("*").eq("employee_id", employeeId).order("updated_at", { ascending: false });
-    return (data ?? []).map((d) => ({
+    const rows = (data ?? []).map((d) => ({
       id: d.id as string,
       name: d.name as string,
       category: d.category as string,
@@ -148,6 +156,8 @@ export async function getEmployeeDocuments(employeeId: string) {
       sharepointWebUrl: d.sharepoint_web_url as string | null,
       updated: d.updated_at as string,
     }));
+    if (!viewer) return rows;
+    return rows.filter((d) => canManagerViewByVisibility(viewer, d.visibility, isDirectManager));
   } catch {
     return [];
   }

@@ -53,6 +53,8 @@ export function EmployeeProfileView({
   isAdmin,
   isSuperAdmin,
   isHR,
+  canViewDocuments,
+  canUploadDocuments,
   canEditIdentity,
   canEditPayroll,
   canManageThisEmployee,
@@ -67,6 +69,11 @@ export function EmployeeProfileView({
   isAdmin: boolean;
   isSuperAdmin: boolean;
   isHR: boolean;
+  // Granular "employee-documents" RBAC checks — see
+  // docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md. Independent of isHR: an admin
+  // can grant these to someone who isn't literally the "HR/Admin" role.
+  canViewDocuments: boolean;
+  canUploadDocuments: boolean;
   canEditIdentity: boolean;
   canEditPayroll: boolean;
   canManageThisEmployee: boolean;
@@ -308,9 +315,9 @@ export function EmployeeProfileView({
         )}
       </div>
 
-      {isHR && (
+      {(isHR || canViewDocuments) && (
         <div className="mt-4">
-          <EmployeeDocumentCentre employeeId={profile.id} documents={documents} />
+          <EmployeeDocumentCentre employeeId={profile.id} documents={documents} canUpload={isHR || canUploadDocuments} />
         </div>
       )}
 

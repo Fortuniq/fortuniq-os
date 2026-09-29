@@ -23,7 +23,7 @@ export const ALL_PERMISSION_ACTIONS: PermissionAction[] = ["View", "Create", "Ed
 export type RbacModuleKey =
   | "dashboard" | "people" | "academy" | "documents" | "tenders"
   | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings" | "audit" | "attendance" | "market-news";
+  | "ai" | "settings" | "audit" | "attendance" | "market-news" | "employee-documents";
 
 export const ALL_RBAC_MODULES: { key: RbacModuleKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -41,6 +41,11 @@ export const ALL_RBAC_MODULES: { key: RbacModuleKey; label: string }[] = [
   { key: "audit", label: "Audit Logs" },
   { key: "attendance", label: "Attendance Management" },
   { key: "market-news", label: "Market News Administration" },
+  // Granular control over an employee's personnel-file Document Centre —
+  // deliberately its own module, separate from "people", so it can be
+  // granted (or withheld) independently of general Employee Hub access.
+  // See docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
+  { key: "employee-documents", label: "Employee Documents (Personnel Files)" },
 ];
 
 // A person's complete, granular permission set: which actions they hold
@@ -122,6 +127,11 @@ export const ROLE_TEMPLATE_PERMISSIONS: Record<RoleTemplateKey, EmployeePermissi
   "HR Manager": {
     dashboard: VIEW, people: FULL, academy: FULL, documents: VIEW_CREATE_EDIT,
     ai: VIEW, settings: VIEW, attendance: FULL,
+    // Full personnel-file/document management — upload, replace/version,
+    // classification, acknowledgements — is a core HR duty, independent
+    // of the "documents" grant above (which covers the general FortunIQ
+    // Documents Hub, not employee personnel files).
+    "employee-documents": FULL,
     // Deliberately no entry for finance/tenders/operations/customers/sales/reports
     // — "No access to HR confidential information unless explicitly assigned"
     // works both ways: HR Manager doesn't get commercial data by default either.
@@ -165,6 +175,7 @@ export const ROLE_TEMPLATE_PERMISSIONS: Record<RoleTemplateKey, EmployeePermissi
     dashboard: FULL, people: FULL, academy: FULL, documents: FULL, settings: FULL,
     audit: VIEW, tenders: VIEW, finance: VIEW, operations: VIEW,
     customers: VIEW, sales: VIEW, reports: VIEW, ai: VIEW, attendance: FULL,
+    "employee-documents": FULL,
   },
 
   // The most restrictive template — matches the existing "Employee" role

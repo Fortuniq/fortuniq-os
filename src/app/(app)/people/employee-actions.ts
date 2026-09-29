@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
-import { getCurrentUserPermissions } from "@/lib/permissions";
-import { requirePermissionAction } from "@/lib/rbac";
+import { getCurrentUserPermissions, type UserPermissions } from "@/lib/permissions";
+import { requirePermissionAction, checkPermissionAction } from "@/lib/rbac";
+import type { PermissionAction } from "@/lib/rbac-core";
 import { logAudit } from "@/lib/audit";
 import { ensureEmployeeFolder, isSharePointConfigured } from "@/lib/graph";
 import { auth } from "@/auth";
@@ -21,6 +22,34 @@ import { createTaskForEmployee } from "@/lib/tasks";
 // enough to submit those two fields; see stripRestrictedFieldsIfUnauthorised().
 async function assertCanEditEmployees(action: "Create" | "Edit") {
   return requirePermissionAction("people", action);
+}
+
+// =========================================================================
+// EMPLOYEE DOCUMENT CENTRE — granular RBAC (fixes HR/Admin being unable to
+// upload/manage employee documents)
+// =========================================================================
+// The Document Centre's mutations used to be gated by a coarse, literal
+// role-name comparison (`permissions.role !== "HR/Admin"`), completely
+// bypassing this app's own granular RBAC system — so an HR/Admin person
+// whose account didn't happen to match that exact string (or who should
+// have been grantable independently of their coarse role) had no way to
+// get access short of being made a Super Admin, which the brief
+// explicitly forbids. This now goes through the same
+// checkPermissionAction() machinery as every other module in the app,
+// against the "employee-documents" module — a module deliberately
+// SEPARATE from "people" (see rbac-core.ts) so it can be granted or
+// withheld independently of general Employee Hub access. Super Admin
+// and HR/Admin (its default) pass automatically; Manager/Finance/
+// Employee do not, unless explicitly granted via System Access &
+// Permissions. See docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
+async function requireEmployeeDocumentAction(
+  action: PermissionAction,
+  deniedMessage: string
+): Promise<{ permissions: UserPermissions; error?: string }> {
+  const permissions = await getCurrentUserPermissions();
+  const allowed = await checkPermissionAction(permissions, "employee-documents", action);
+  if (!allowed) return { permissions, error: deniedMessage };
+  return { permissions };
 }
 
 // If the person submitting this form isn't authorised to see restricted
@@ -235,10 +264,15 @@ export async function setEmployeeDocumentVisibility(
   acknowledgementRequired: boolean
 ): Promise<{ error?: string }> {
   try {
-    const permissions = await getCurrentUserPermissions();
-    if (!permissions.isAdmin && permissions.role !== "HR/Admin") {
-      return { error: "Only HR or a Super Admin can change document visibility." };
-    }
+    // Classification and acknowledgement-required are the most sensitive
+    // controls in the Document Centre, so they require "Manage" — the
+    // top tier — on the employee-documents module, not merely upload/edit
+    // access. See requireEmployeeDocumentAction() above.
+    const { permissions, error: permissionError } = await requireEmployeeDocumentAction(
+      "Manage",
+      "Only HR or a Super Admin can change document visibility."
+    );
+    if (permissionError) return { error: permissionError };
 
     const supabase = createServiceClient();
     const { data: before } = await supabase.from("documents").select("name, visibility, acknowledgement_required").eq("id", documentId).maybeSingle();
@@ -278,10 +312,11 @@ export async function sendAcknowledgementReminder(params: {
   documentName: string;
 }): Promise<{ error?: string }> {
   try {
-    const permissions = await getCurrentUserPermissions();
-    if (!permissions.isAdmin && permissions.role !== "HR/Admin") {
-      return { error: "Only HR or a Super Admin can send acknowledgement reminders." };
-    }
+    const { permissions, error: permissionError } = await requireEmployeeDocumentAction(
+      "Manage",
+      "Only HR or a Super Admin can send acknowledgement reminders."
+    );
+    if (permissionError) return { error: permissionError };
     await createTaskForEmployee({
       title: `Please acknowledge: ${params.documentName}`,
       employeeEmail: params.employeeEmail,
@@ -314,10 +349,12 @@ export async function sendAcknowledgementReminder(params: {
  */
 export async function uploadEmployeeDocument(formData: FormData): Promise<{ error?: string }> {
   try {
-    const permissions = await getCurrentUserPermissions();
-    if (!permissions.isAdmin && permissions.role !== "HR/Admin") {
-      return { error: "Only HR or a Super Admin can upload documents to an employee's personnel file." };
-    }
+    // "Create" — uploading a brand-new document into the personnel file.
+    const { permissions, error: permissionError } = await requireEmployeeDocumentAction(
+      "Create",
+      "Only HR or a Super Admin can upload documents to an employee's personnel file."
+    );
+    if (permissionError) return { error: permissionError };
 
     const employeeId = String(formData.get("employeeId") ?? "");
     const name = String(formData.get("name") ?? "").trim();

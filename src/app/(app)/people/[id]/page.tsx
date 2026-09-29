@@ -13,11 +13,10 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
   await requireModuleAccess("people");
   const permissions = await getCurrentUserPermissions();
   const { id } = await params;
-  const [profile, directory, canEdit, documents, leaveRequests, performanceReviews, viewerEmployee] = await Promise.all([
+  const [profile, directory, canEdit, leaveRequests, performanceReviews, viewerEmployee] = await Promise.all([
     getEmployeeProfile(id),
     getEmployeeDirectory(),
     checkPermissionAction(permissions, "people", "Edit"),
-    getEmployeeDocuments(id),
     getMyLeaveRequests(id),
     getAllReviewsForEmployee(id),
     permissions.email ? getEmployeeByEmail(permissions.email) : Promise.resolve(null),
@@ -35,6 +34,17 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
   const identityAccess = canViewIdentity(permissions, profile.email);
   const canSeePayroll = canViewPayroll(permissions);
   const isManagerOfThisEmployee = canManagerAccessTeamMember(permissions, viewerEmployee?.id ?? null, profile.managerId);
+
+  // Real, granular RBAC check for the Document Centre — independent of
+  // general "people" access, so it can be granted to HR/Admin (its
+  // default) or explicitly to anyone else without also handing them
+  // broader Employee Hub edit rights. See
+  // docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
+  const [canViewEmployeeDocuments, canUploadEmployeeDocuments, documents] = await Promise.all([
+    checkPermissionAction(permissions, "employee-documents", "View"),
+    checkPermissionAction(permissions, "employee-documents", "Create"),
+    getEmployeeDocuments(id, permissions, isManagerOfThisEmployee),
+  ]);
 
   const safeProfile = {
     ...profile,
@@ -63,6 +73,8 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
       // escalation risk. See docs/RBAC.md.
       isSuperAdmin={permissions.isAdmin}
       isHR={permissions.isAdmin || permissions.role === "HR/Admin"}
+      canViewDocuments={canViewEmployeeDocuments}
+      canUploadDocuments={canUploadEmployeeDocuments}
       canEditIdentity={identityAccess === "full"}
       canEditPayroll={canSeePayroll}
       canManageThisEmployee={isManagerOfThisEmployee}

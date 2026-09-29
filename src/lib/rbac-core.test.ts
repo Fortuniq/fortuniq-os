@@ -152,6 +152,21 @@ describe("Marketing: exact worked example from the brief", () => {
   });
 });
 
+describe("HR Manager template: full employee-document management, independent of People", () => {
+  // Regression test for the HR/Admin Document Centre permissions fix —
+  // see docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
+  const role = ROLE_TEMPLATE_PERMISSIONS["HR Manager"];
+  it("has Manage on employee-documents", () => {
+    expect(hasPermissionAction(role, "employee-documents", "Manage")).toBe(true);
+    expect(hasPermissionAction(role, "employee-documents", "View")).toBe(true);
+    expect(hasPermissionAction(role, "employee-documents", "Create")).toBe(true);
+  });
+  it("Tender Administrator and Marketing (non-HR templates) do NOT get employee-documents", () => {
+    expect(hasPermissionAction(ROLE_TEMPLATE_PERMISSIONS["Tender Administrator"], "employee-documents", "View")).toBe(false);
+    expect(hasPermissionAction(ROLE_TEMPLATE_PERMISSIONS["Marketing"], "employee-documents", "View")).toBe(false);
+  });
+});
+
 describe("Intern: minimal access, matching the most restrictive existing role", () => {
   const role = ROLE_TEMPLATE_PERMISSIONS["Intern"];
   it("has only Dashboard, Academy, Documents, and AI", () => {

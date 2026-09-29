@@ -12,7 +12,7 @@
 export type ModuleKey =
   | "dashboard" | "people" | "academy" | "documents" | "tenders"
   | "finance" | "operations" | "customers" | "sales" | "reports"
-  | "ai" | "settings" | "audit" | "attendance" | "market-news";
+  | "ai" | "settings" | "audit" | "attendance" | "market-news" | "employee-documents";
 
 export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -30,6 +30,12 @@ export const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: "audit", label: "Audit Logs" },
   { key: "attendance", label: "Attendance Management" },
   { key: "market-news", label: "Market News Administration" },
+  // Deliberately separate from "people" (the general Employee Hub module)
+  // — see docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md. Someone can have "people"
+  // access (the employee directory, profile fields) without this, and
+  // vice versa, so an admin can grant employee-document management
+  // independently of general HR-record editing rights.
+  { key: "employee-documents", label: "Employee Documents (Personnel Files)" },
 ];
 
 export const ALL_MODULE_KEYS = ALL_MODULES.map((m) => m.key);
@@ -41,7 +47,13 @@ export const ALL_ROLES: RoleKey[] = ["Super Admin", "Management", "HR/Admin", "F
 export const ROLE_DEFAULT_MODULES: Record<RoleKey, ModuleKey[]> = {
   "Super Admin": ALL_MODULE_KEYS,
   "Management": ["dashboard", "people", "academy", "documents", "tenders", "finance", "operations", "customers", "sales", "reports", "ai", "settings"],
-  "HR/Admin": ["dashboard", "people", "academy", "documents", "ai", "settings", "audit", "attendance"],
+  // HR/Admin gets "employee-documents" by default — full personnel-file
+  // management is a core HR duty. Management, Finance, Sales/Marketing
+  // and Employee deliberately do NOT get it by default (see
+  // docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md, section 9 of the brief) — a
+  // Manager or Finance user must be explicitly granted it via System
+  // Access & Permissions if ever needed.
+  "HR/Admin": ["dashboard", "people", "academy", "documents", "ai", "settings", "audit", "attendance", "employee-documents"],
   "Finance": ["dashboard", "finance", "reports", "academy", "documents", "ai", "settings"],
   "Sales/Marketing": ["dashboard", "customers", "sales", "reports", "academy", "documents", "ai", "settings"],
   "Employee": ["dashboard", "academy", "documents", "ai", "settings"],

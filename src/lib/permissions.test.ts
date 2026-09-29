@@ -133,6 +133,23 @@ describe("HR/Admin: has people & training data, not commercial data", () => {
   });
 });
 
+describe("Employee Documents module: HR/Admin default, no one else by default", () => {
+  // Regression test for the HR/Admin Document Centre permissions fix —
+  // see docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md. "employee-documents" is
+  // deliberately separate from "people" so it can be granted/withheld
+  // independently.
+  it("Super Admin and HR/Admin have it by default", () => {
+    expect(hasModuleAccess(activeUserWithRole("Super Admin"), "employee-documents")).toBe(true);
+    expect(hasModuleAccess(activeUserWithRole("HR/Admin"), "employee-documents")).toBe(true);
+  });
+  it("Management, Finance, Sales/Marketing, and Employee do NOT have it by default", () => {
+    const restricted: RoleKey[] = ["Management", "Finance", "Sales/Marketing", "Employee"];
+    for (const role of restricted) {
+      expect(hasModuleAccess(activeUserWithRole(role), "employee-documents")).toBe(false);
+    }
+  });
+});
+
 describe("Management: broad visibility, but not Team Management or Audit Logs", () => {
   const management = activeUserWithRole("Management");
   it("Management sees essentially every business module", () => {
@@ -184,12 +201,12 @@ describe("Full role x module matrix (exact match against documented table)", () 
   // This mirrors the table in docs/ROLES_AND_PERMISSIONS.md exactly — if
   // you change one, change the other, and re-run this test.
   const EXPECTED: Record<RoleKey, Record<ModuleKey, boolean>> = {
-    "Super Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: true, attendance: true, "market-news": true },
-    "Management": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false, attendance: false, "market-news": false },
-    "HR/Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: true, attendance: true, "market-news": false },
-    "Finance": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: true, operations: false, customers: false, sales: false, reports: true, ai: true, settings: true, audit: false, attendance: false, "market-news": false },
-    "Sales/Marketing": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false, attendance: false, "market-news": false },
-    "Employee": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: false, attendance: false, "market-news": false },
+    "Super Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: true, attendance: true, "market-news": true, "employee-documents": true },
+    "Management": { dashboard: true, people: true, academy: true, documents: true, tenders: true, finance: true, operations: true, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false, attendance: false, "market-news": false, "employee-documents": false },
+    "HR/Admin": { dashboard: true, people: true, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: true, attendance: true, "market-news": false, "employee-documents": true },
+    "Finance": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: true, operations: false, customers: false, sales: false, reports: true, ai: true, settings: true, audit: false, attendance: false, "market-news": false, "employee-documents": false },
+    "Sales/Marketing": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: true, sales: true, reports: true, ai: true, settings: true, audit: false, attendance: false, "market-news": false, "employee-documents": false },
+    "Employee": { dashboard: true, people: false, academy: true, documents: true, tenders: false, finance: false, operations: false, customers: false, sales: false, reports: false, ai: true, settings: true, audit: false, attendance: false, "market-news": false, "employee-documents": false },
   };
 
   for (const role of ALL_ROLES) {

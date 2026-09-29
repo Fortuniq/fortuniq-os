@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
-import { requireModuleAccess } from "@/lib/permissions";
+import { requireModuleAccess, getCurrentUserPermissions, hasModuleAccess } from "@/lib/permissions";
 import { requirePermissionAction, checkPermissionAction } from "@/lib/rbac";
+import type { PermissionAction } from "@/lib/rbac-core";
 import { logAudit } from "@/lib/audit";
 import { auth } from "@/auth";
 import {
@@ -170,6 +171,23 @@ async function fetchDocumentRow(documentId: string) {
   return data;
 }
 
+/**
+ * Real "check the entire permission chain" fix — the Documents module's
+ * own Edit/Create/Delete permission is meant for the general FortunIQ
+ * Documents Hub, not employee personnel files. Without this branch, a
+ * Manager or Finance user with ordinary "documents" Edit access (which
+ * several roles get by default — see permissions-core.ts) could replace,
+ * relink, remove, or restore a version of ANY employee's document just by
+ * opening the shared DocumentLinkModal from someone's Employee Profile,
+ * completely bypassing the dedicated employee-documents RBAC module. Any
+ * document with employee_id set is routed through that module instead.
+ * See docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
+ */
+async function requireDocumentMutationAccess(doc: { employee_id: string | null }, action: PermissionAction) {
+  if (doc.employee_id) return requirePermissionAction("employee-documents", action);
+  return requirePermissionAction("documents", action);
+}
+
 const EMPLOYEE_PERFORMANCE_CATEGORIES = ["Performance Review", "Performance"];
 const EMPLOYEE_SKILLS_CATEGORIES = ["Training Certificate", "Qualification", "Skills & Certifications"];
 
@@ -239,8 +257,8 @@ async function _linkDocumentToFile(params: {
   sharepointWebUrl: string;
   comments?: string;
 }) {
-  const permissions = await requirePermissionAction("documents", "Edit");
   const doc = await fetchDocumentRow(params.documentId);
+  const permissions = await requireDocumentMutationAccess(doc, "Edit");
   if (doc.sharepoint_item_id) {
     throw new Error("This document already has a linked file — use Replace Current Version instead.");
   }
@@ -270,7 +288,7 @@ async function _linkDocumentToFile(params: {
   await logAudit({
     actorEmail: permissions.email!, actorName: permissions.name, action: "document_catalogued",
     targetType: "document", targetId: params.documentId, targetLabel: doc.name,
-    metadata: { sharepointItemId: params.sharepointItemId },
+    metadata: { sharepointItemId: params.sharepointItemId, employeeId: doc.employee_id ?? undefined, version: versionNumber },
   });
 
   revalidatePath("/documents");
@@ -305,13 +323,13 @@ export async function linkDocumentToFile(params: {
  */
 export async function uploadAndLinkDocument(formData: FormData): Promise<ActionResult> {
   try {
-    const permissions = await requirePermissionAction("documents", "Edit");
     const documentId = String(formData.get("documentId") ?? "");
     const comments = String(formData.get("comments") ?? "").trim() || undefined;
     const file = formData.get("file") as File | null;
     if (!documentId || !file || file.size === 0) return { error: "Choose a file to upload." };
 
     const doc = await fetchDocumentRow(documentId);
+    const permissions = await requireDocumentMutationAccess(doc, "Edit");
     if (doc.sharepoint_item_id) return { error: "This document already has a linked file — use Replace Current Version instead." };
 
     const accessToken = await requireGraphAccessToken();
@@ -343,13 +361,13 @@ export async function uploadAndLinkDocument(formData: FormData): Promise<ActionR
  */
 export async function replaceDocumentVersion(formData: FormData): Promise<ActionResult> {
   try {
-    const permissions = await requirePermissionAction("documents", "Edit");
     const documentId = String(formData.get("documentId") ?? "");
     const comments = String(formData.get("comments") ?? "").trim() || undefined;
     const mode = String(formData.get("mode") ?? "upload"); // "upload" | "existing"
     if (!documentId) return { error: "Missing document." };
 
     const doc = await fetchDocumentRow(documentId);
+    const permissions = await requireDocumentMutationAccess(doc, "Edit");
     if (!doc.sharepoint_item_id) return { error: "This document has no current version to replace — use Attach Document instead." };
 
     const accessToken = await requireGraphAccessToken();
@@ -408,7 +426,7 @@ export async function replaceDocumentVersion(formData: FormData): Promise<Action
     await logAudit({
       actorEmail: permissions.email!, actorName: permissions.name, action: "document_replaced",
       targetType: "document", targetId: documentId, targetLabel: doc.name,
-      metadata: { fromVersion: doc.current_version_number, toVersion: newVersionNumber, revertedToDraft: revertsToDraft },
+      metadata: { fromVersion: doc.current_version_number, toVersion: newVersionNumber, revertedToDraft: revertsToDraft, employeeId: doc.employee_id ?? undefined },
     });
     if (revertsToDraft) {
       await logAudit({
@@ -431,8 +449,8 @@ export async function replaceDocumentVersion(formData: FormData): Promise<Action
  */
 export async function removeDocumentLink(documentId: string): Promise<ActionResult> {
   try {
-    const permissions = await requirePermissionAction("documents", "Edit");
     const doc = await fetchDocumentRow(documentId);
+    const permissions = await requireDocumentMutationAccess(doc, "Edit");
     if (!doc.sharepoint_item_id) return {};
 
     const supabase = createServiceClient();
@@ -459,8 +477,8 @@ export async function removeDocumentLink(documentId: string): Promise<ActionResu
 /** Restores a previously archived version as the current one. Also moves the physical file back out of Archive in SharePoint. */
 export async function restoreDocumentVersion(documentId: string, versionId: string): Promise<ActionResult> {
   try {
-    const permissions = await requirePermissionAction("documents", "Edit");
     const doc = await fetchDocumentRow(documentId);
+    const permissions = await requireDocumentMutationAccess(doc, "Edit");
 
     const supabase = createServiceClient();
     const { data: version } = await supabase.from("document_versions").select("*").eq("id", versionId).eq("document_id", documentId).maybeSingle();
@@ -620,7 +638,26 @@ export async function deleteDocumentRecord(documentId: string): Promise<ActionRe
  * showing an empty list — so no user-facing message is lost.
  */
 export async function getDocumentVersionsAction(documentId: string) {
-  const permissions = await requireModuleAccess("documents");
+  const permissions = await getCurrentUserPermissions();
+  const doc = await fetchDocumentRow(documentId).catch(() => null);
+
+  // Employee personnel-file documents are gated by the dedicated
+  // employee-documents module, not the general Documents module — same
+  // "check the entire permission chain" reasoning as
+  // requireDocumentMutationAccess() above, applied to viewing version
+  // history too (previously anyone with ordinary "documents" access —
+  // which most roles have by default — could read another employee's
+  // document version history just by knowing its id). See
+  // docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md.
+  if (doc?.employee_id) {
+    const canView = permissions.isAdmin || (await checkPermissionAction(permissions, "employee-documents", "View"));
+    if (!canView) return [];
+    const versions = await getVersionHistory(documentId);
+    const canSeeArchive = permissions.isAdmin || permissions.role === "HR/Admin" || (await checkPermissionAction(permissions, "employee-documents", "Manage"));
+    return canSeeArchive ? versions : versions.filter((v) => v.isCurrent);
+  }
+
+  if (!hasModuleAccess(permissions, "documents")) return [];
   const versions = await getVersionHistory(documentId);
   const canSeeArchive = permissions.isAdmin || permissions.role === "HR/Admin" || (await checkPermissionAction(permissions, "documents", "Manage"));
   if (canSeeArchive) return versions;

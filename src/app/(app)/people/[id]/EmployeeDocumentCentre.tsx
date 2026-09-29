@@ -30,7 +30,7 @@ const CATEGORIES = [
 
 const VISIBILITY_OPTIONS = ["Employee Visible", "Manager Visible", "HR Restricted", "Finance Restricted", "Super Admin Only"];
 
-export function EmployeeDocumentCentre({ employeeId, documents }: { employeeId: string; documents: EmployeeDoc[] }) {
+export function EmployeeDocumentCentre({ employeeId, documents, canUpload = true }: { employeeId: string; documents: EmployeeDoc[]; canUpload?: boolean }) {
   const [showUpload, setShowUpload] = useState(false);
   const [linkModalDoc, setLinkModalDoc] = useState<EmployeeDoc | null>(null);
   const [versionsDoc, setVersionsDoc] = useState<EmployeeDoc | null>(null);
@@ -39,12 +39,18 @@ export function EmployeeDocumentCentre({ employeeId, documents }: { employeeId: 
     <Card>
       <CardHeader>
         <CardTitle>Document Centre</CardTitle>
-        <button
-          onClick={() => setShowUpload(true)}
-          className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-1.5 rounded-lg hover:bg-orange transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" /> Upload Document
-        </button>
+        {/* Hidden entirely (not just disabled) for anyone without upload
+            rights — matches the server-side check in uploadEmployeeDocument(),
+            so this is defence-in-depth, not the only gate. See
+            docs/EMPLOYEE_DOCUMENT_PERMISSIONS.md. */}
+        {canUpload && (
+          <button
+            onClick={() => setShowUpload(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-navy px-3 py-1.5 rounded-lg hover:bg-orange transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Upload Document
+          </button>
+        )}
       </CardHeader>
       <CardBody className="space-y-1">
         {documents.length === 0 && <p className="text-sm text-light-grey py-2">No documents on file yet.</p>}
