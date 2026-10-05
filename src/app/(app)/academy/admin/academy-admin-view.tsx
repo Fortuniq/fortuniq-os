@@ -287,7 +287,7 @@ function LessonForm({ lesson, onSubmit, onCancel, submitting }: { lesson?: Admin
       <input name="title" defaultValue={lesson?.title} placeholder="Lesson title" required className="w-full text-sm px-3 py-2 rounded-lg border border-border" />
       <textarea name="content" defaultValue={lesson?.content} placeholder="Lesson content" required rows={5} className="w-full text-sm px-3 py-2 rounded-lg border border-border" />
       <div className="flex gap-3">
-        <input name="videoUrl" defaultValue={lesson?.videoUrl ?? ""} placeholder="Video URL (optional)" className="flex-1 text-sm px-3 py-2 rounded-lg border border-border" />
+        <input name="videoUrl" defaultValue={lesson?.videoUrl ?? ""} placeholder="Video URL — YouTube, Vimeo, or a direct .mp4 link (optional)" className="flex-1 text-sm px-3 py-2 rounded-lg border border-border" />
         <input name="durationMinutes" type="number" defaultValue={lesson?.durationMinutes ?? 5} placeholder="Minutes" className="w-24 text-sm px-3 py-2 rounded-lg border border-border" />
       </div>
       <div className="flex gap-2">

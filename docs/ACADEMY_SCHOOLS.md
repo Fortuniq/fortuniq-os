@@ -39,13 +39,18 @@ redesign needed. Until then, that space shows a clean placeholder and the
 lesson displays as genuinely well-written text below it, not a stand-in.
 
 **To add a real video to a lesson later:**
-1. Record or source the video, and host it somewhere reachable by URL —
-   SharePoint (which you already have connected), Microsoft Stream, an
-   unlisted YouTube/Vimeo link, or anywhere else that gives you a direct
-   playable URL.
-2. In Supabase → Table Editor → `lessons`, find the row for that lesson,
-   and paste the URL into `video_url`.
-3. Reload the lesson in the app — the video now plays automatically.
+1. Record or source the video and host it somewhere reachable by URL.
+2. Paste the URL into the lesson's "Video URL" field (Academy → Admin),
+   or into `video_url` on the `lessons` row in Supabase.
+3. Reload the lesson — it plays according to the link type
+   (`src/lib/video-core.ts`):
+   - **YouTube / Vimeo** page links (watch, youtu.be, shorts, unlisted
+     Vimeo) → embedded player. Just paste the normal link.
+   - **Direct file** links (`…/lesson.mp4`, `.webm`, `.mov`) → native player.
+   - **SharePoint / OneDrive / Stream / Google Drive / Dropbox share
+     links** → these are sign-in web pages, not video files, and can't be
+     played inline; the lesson shows an **Open video** button instead.
+     For inline playback, upload the video to YouTube (unlisted) or Vimeo.
 
 ## How assessments work
 

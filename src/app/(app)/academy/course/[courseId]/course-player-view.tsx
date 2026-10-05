@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import type { CourseDetail } from "@/lib/data";
+import { resolveVideoSource } from "@/lib/video-core";
 import { markLessonComplete, submitQuiz } from "../../academy-actions";
 
 type Mode = { type: "lesson"; index: number } | { type: "quiz" } | { type: "quiz-result" };
@@ -136,22 +137,75 @@ export function CoursePlayerView({ course }: { course: CourseDetail }) {
   );
 }
 
+/**
+ * Shows a lesson's video however it was linked: direct files play in a
+ * native <video>, YouTube/Vimeo links become embedded players, and
+ * authenticated web-page links (SharePoint/OneDrive/Stream) or a native
+ * playback failure fall back to a clear "Open video" link rather than a
+ * silently dead player. See src/lib/video-core.ts.
+ */
+function LessonVideo({ videoUrl }: { videoUrl: string | null }) {
+  const [nativeFailed, setNativeFailed] = useState(false);
+  const source = resolveVideoSource(videoUrl);
+
+  if (!source) {
+    return (
+      <div className="aspect-video bg-navy rounded-t-xl flex flex-col items-center justify-center gap-2">
+        <Video className="w-10 h-10 text-white/20" />
+        <p className="text-white/40 text-xs">Video coming soon — reading lesson below</p>
+      </div>
+    );
+  }
+
+  if (source.kind === "embed") {
+    return (
+      <div className="aspect-video bg-navy rounded-t-xl overflow-hidden">
+        <iframe
+          src={source.src}
+          title={`${source.provider} video`}
+          className="w-full h-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+      </div>
+    );
+  }
+
+  if (source.kind === "direct" && !nativeFailed) {
+    return (
+      <div className="aspect-video bg-navy rounded-t-xl overflow-hidden">
+        <video src={source.src} controls playsInline preload="metadata" className="w-full h-full" onError={() => setNativeFailed(true)} />
+      </div>
+    );
+  }
+
+  const openHref = source.kind === "invalid" ? null : source.src;
+  const message =
+    source.kind === "invalid" ? "This lesson's video link isn't a valid web address — ask an Academy admin to check it."
+    : source.kind === "link" ? `This video is hosted on ${source.provider} and opens in its own tab.`
+    : "This video couldn't be played here.";
+  return (
+    <div className="aspect-video bg-navy rounded-t-xl flex flex-col items-center justify-center gap-3 px-6 text-center">
+      <Video className="w-10 h-10 text-white/30" />
+      <p className="text-white/70 text-xs max-w-sm">{message}</p>
+      {openHref && (
+        <a href={openHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-orange text-white text-xs font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">
+          <PlayCircle className="w-4 h-4" /> Open video
+        </a>
+      )}
+    </div>
+  );
+}
+
 function LessonPanel({ lesson, onComplete, isLast, hasQuiz }: { lesson: CourseDetail["lessons"][number]; onComplete: () => void; isLast: boolean; hasQuiz: boolean }) {
   return (
     <Card>
       {/* Video-ready area: shows a real video if one's been added, otherwise
           a clean placeholder — the layout is identical either way, so
           adding a real video later needs no redesign. */}
-      {lesson.videoUrl ? (
-        <div className="aspect-video bg-navy rounded-t-xl overflow-hidden">
-          <video src={lesson.videoUrl} controls className="w-full h-full" />
-        </div>
-      ) : (
-        <div className="aspect-video bg-navy rounded-t-xl flex flex-col items-center justify-center gap-2">
-          <Video className="w-10 h-10 text-white/20" />
-          <p className="text-white/40 text-xs">Video coming soon — reading lesson below</p>
-        </div>
-      )}
+      <LessonVideo key={lesson.id} videoUrl={lesson.videoUrl} />
+
 
       <CardBody className="pt-5">
         <h2 className="font-display text-lg font-bold text-navy mb-3">{lesson.title}</h2>
