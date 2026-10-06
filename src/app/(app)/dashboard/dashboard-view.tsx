@@ -53,6 +53,7 @@ type DashboardProps = {
     upcomingLeave: { leaveType: string; startDate: string; endDate: string }[];
     myPendingLeaveCount: number;
     orgPendingLeaveCount: number;
+    orgPendingLeaveItems: { employeeId: string; employeeName: string; leaveType: string; startDate: string; endDate: string }[];
     probationEndingSoon: boolean;
     isBirthdayToday: boolean;
     isWorkAnniversaryToday: boolean;

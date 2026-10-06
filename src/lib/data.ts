@@ -700,6 +700,11 @@ export async function getPersonalisedDashboardData(permissions: UserPermissions)
     upcomingLeave: upcomingLeave.map((r) => ({ leaveType: r.leaveType, startDate: r.startDate, endDate: r.endDate })),
     myPendingLeaveCount: myLeaveRequests.filter((r) => r.status === "Pending").length,
     orgPendingLeaveCount: orgPendingLeave.length,
+    // Oldest first (already ordered that way) — capped so the card stays
+    // compact; each links to that employee's profile, where HR reviews it.
+    orgPendingLeaveItems: orgPendingLeave.slice(0, 5).map((r) => ({
+      employeeId: r.employeeId, employeeName: r.employeeName, leaveType: r.leaveType, startDate: r.startDate, endDate: r.endDate,
+    })),
     probationEndingSoon: !!myEmployeeRecord?.employmentExtra.probationEndDate && isWithinDays(myEmployeeRecord.employmentExtra.probationEndDate, 14),
     isBirthdayToday: isAnniversaryToday(myEmployeeRecord?.identity.dateOfBirth ?? null),
     isWorkAnniversaryToday: isAnniversaryToday(myEmployeeRecord?.startDate ?? null),
